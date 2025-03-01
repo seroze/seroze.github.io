@@ -1,5 +1,17 @@
+---
+layout: default
+---
+
+<h1>{{ page.title }}</h1>
+<p><em>Published on {{ page.date | date: "%B %d, %Y" }}</em></p>
+
+<div>{{ content }}</div>
+
+<!-- ✅ Add this to show tags without breaking the layout -->
+{% if page.tags %}
 <p>
     Tags: {% for tag in page.tags %}
     <a href="/tags/{{ tag | slugify }}">{{ tag }}</a>{% if forloop.last == false
     %}, {% endif %} {% endfor %}
 </p>
+{% endif %}
