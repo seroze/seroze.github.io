@@ -5,6 +5,7 @@ date: 2025-03-01 10:00:00 +0530
 categories: introduction personal
 tags: [distributed-systems]
 author: "Seroze"
+published: false
 ---
 
 Every application has a state which can change over time now we want to consume this stream from different apps, we want to develop a middleware service that can consume this stream and provide a filtered view via websocket to various clients like web browser or apps.
