@@ -262,3 +262,169 @@ Both states converge in a single pass.
 This observation made value iteration feel much more like **graph algorithms** than machine learning. At its core, it is repeatedly propagating information through a state graph until the values converge to a fixed point.
 
 The Bellman-Ford analogy reframes RL from "AI magic" into something that feels much closer to **dynamic programming and graph optimization** — a much more familiar mental model for a systems engineer.
+
+---
+
+## Dynamic Programming, Monte Carlo, and Temporal Difference Learning
+
+After understanding Bellman equations and value iteration, the next question is:
+
+> How do we actually compute the optimal values and policies?
+
+### Policy Evaluation
+
+Suppose someone gives us a policy and asks: *how good is this policy?*
+
+For a fixed policy, we repeatedly apply the Bellman expectation equation until values converge. For the chain:
+
+```
+A -> B -> Goal
+
+Reward(A->B)   = 10
+Reward(B->Goal) = 100
+γ = 0.5
+```
+
+```
+V(B) = 100
+V(A) = 10 + 0.5 * 100 = 60
+```
+
+The important observation: we are not trying to improve the policy yet — we are simply **measuring how good it is**.
+
+---
+
+### Policy Improvement
+
+Once we know the value of states, we can ask: *is there a better action available?*
+
+```
+Q(S, A) = 50
+Q(S, B) = 80
+Q(S, C) = 40
+```
+
+If the current policy chooses A, we improve it by switching to B. This leads to **Policy Iteration**:
+
+```
+Policy → Evaluate → Values → Improve → Better Policy → ...
+```
+
+Repeating this process converges to the optimal policy. One nice property: policy improvement cannot make the policy worse — we only switch to actions whose value is at least as good.
+
+---
+
+### Why Dynamic Programming Breaks Down
+
+Dynamic Programming assumes we know every state, action, reward, and transition probability. This quickly becomes impractical for environments with billions of states.
+
+This reminded me of graph algorithms. Bellman-Ford works because the graph is already known. But if you say:
+
+> You don't know the graph. Start walking and discover edges as you go.
+
+Bellman-Ford can no longer be applied directly. This is exactly the transition from **Dynamic Programming to Reinforcement Learning**.
+
+---
+
+### Monte Carlo Methods
+
+Monte Carlo methods solve the problem of not knowing the model. Instead of solving Bellman equations directly, we estimate values from experience.
+
+Suppose every time we start from state S we observe returns:
+
+```
+80, 90, 70, 100, 60
+```
+
+The simplest estimate:
+
+$$V(S) = \text{Average(Returns)} = 80$$
+
+This works because value is defined as *expected* future return. As we observe more episodes, the estimate converges toward the true value.
+
+> Learn from complete outcomes instead of solving the model.
+
+**The limitation:** Monte Carlo requires waiting until an episode finishes. For a game lasting 5000 steps, the agent must wait for the entire episode before updating any estimate — learning becomes very slow.
+
+---
+
+### Temporal Difference Learning
+
+Temporal Difference (TD) Learning combines Bellman equations with Monte Carlo. Instead of waiting for the final outcome, TD updates estimates **immediately after every transition**.
+
+Suppose:
+
+```
+A -> B,  Reward = 10
+V(A) = 30,  V(B) = 80,  γ = 0.5
+```
+
+The Bellman target is:
+
+$$\text{Target} = 10 + 0.5 \times 80 = 50$$
+
+Our current estimate is $$V(A) = 30$$. The disagreement is the **TD Error**:
+
+$$\delta = \text{Target} - \text{Current Estimate} = 50 - 30 = 20$$
+
+We update by moving gradually toward the target:
+
+$$V(A) \leftarrow V(A) + \alpha \delta$$
+
+With $$\alpha = 0.2$$:
+
+$$V(A) = 30 + 0.2 \times 20 = 34$$
+
+---
+
+### Interpreting TD Error
+
+The sign of the TD error is surprisingly intuitive:
+
+| TD Error | Meaning |
+|----------|---------|
+| $$\delta > 0$$ | Reality was **better** than expected |
+| $$\delta < 0$$ | Reality was **worse** than expected |
+| $$\delta = 0$$ | Estimate already satisfies the Bellman relationship |
+
+TD error measures **Bellman inconsistency** between adjacent states.
+
+---
+
+### Bootstrapping
+
+One of the most important ideas in RL is **bootstrapping** — updating an estimate using another estimate.
+
+When we compute:
+
+$$\text{Target} = R + \gamma \cdot V(B)$$
+
+we are using our estimate of B to improve our estimate of A. $$V(B)$$ is not ground truth — it is itself a learned estimate.
+
+This initially feels suspicious, but repeated Bellman updates gradually propagate information through the state graph and drive estimates toward a consistent fixed point.
+
+---
+
+### Monte Carlo vs TD Learning
+
+| | Monte Carlo | Temporal Difference |
+|-|-------------|---------------------|
+| When to update | After full episode | After every step |
+| What to learn from | Actual returns | Estimated future values |
+| Bootstrapping | No | Yes |
+
+This distinction is one of the central ideas in Reinforcement Learning.
+
+---
+
+### A New Perspective
+
+The Bellman-Ford analogy became even stronger here.
+
+**Value Iteration** feels like:
+> Known graph. Relax every edge repeatedly.
+
+**TD Learning** feels like:
+> Unknown graph. Walk through it. Relax only the edges you encounter.
+
+This was the moment RL started feeling less like machine learning and more like **stochastic graph optimization**.
