@@ -74,11 +74,11 @@ $$\langle \mathcal{S}, \mathcal{A}, P, R, \gamma \rangle$$
 
 | Symbol | Meaning |
 |--------|---------|
-| $\mathcal{S}$ | States |
-| $\mathcal{A}$ | Actions |
-| $P$ | Transition probabilities |
-| $R$ | Reward function |
-| $\gamma$ | Discount factor |
+| $$\mathcal{S}$$ | States |
+| $$\mathcal{A}$$ | Actions |
+| $$P$$ | Transition probabilities |
+| $$R$$ | Reward function |
+| $$\gamma$$ | Discount factor |
 
 ---
 
@@ -100,14 +100,14 @@ $$G_t = R_{t+1} + \gamma R_{t+2} + \gamma^2 R_{t+3} + \cdots$$
 
 ## Discount Factor
 
-$\gamma$ controls how patient the agent is.
+$$\gamma$$ controls how patient the agent is.
 
-- $\gamma = 0$ — only cares about immediate reward.
-- $\gamma \approx 1$ — values long-term outcomes.
+- $$\gamma = 0$$ — only cares about immediate reward.
+- $$\gamma \approx 1$$ — values long-term outcomes.
 
 This maps naturally to engineering organizations:
-- Low $\gamma$ → optimize quarterly metrics.
-- High $\gamma$ → invest in long-term infrastructure and reliability.
+- Low $$\gamma$$ → optimize quarterly metrics.
+- High $$\gamma$$ → invest in long-term infrastructure and reliability.
 
 ---
 
@@ -125,7 +125,7 @@ A state can have immediate reward = 0 yet very high value. In chess, a position 
 
 ## Action-Value Functions
 
-Sometimes we care about specific actions rather than states. This gives us $Q(s, a)$:
+Sometimes we care about specific actions rather than states. This gives us $$Q(s, a)$$:
 
 $$Q(s, a) = \mathbb{E}\left[G_t \mid S_t = s, A_t = a\right]$$
 
