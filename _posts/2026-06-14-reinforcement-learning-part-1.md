@@ -188,3 +188,77 @@ The biggest shift in thinking: **RL is not about maximizing immediate rewards �
 A move with zero immediate reward can be better than a move with a positive reward if it leads to a significantly better future.
 
 That single idea motivates value functions, Bellman equations, planning, and much of reinforcement learning itself.
+
+---
+
+## Bellman Equations and the Bellman-Ford Connection
+
+The Bellman equation started feeling much less abstract once I noticed its similarity to shortest path algorithms.
+
+Suppose we have a simple chain of states:
+
+```
+A -> B -> Goal
+```
+
+with $$V(\text{Goal}) = 100$$ and $$\gamma = 0.9$$.
+
+Using the Bellman update:
+
+$$V(s) = R + \gamma V(s')$$
+
+value propagates **backwards** through the graph:
+
+$$V(B) = 0 + 0.9 \times 100 = 90$$
+
+$$V(A) = 0 + 0.9 \times 90 = 81$$
+
+This immediately reminded me of the **Bellman-Ford shortest path algorithm**, where distance information propagates backwards from the destination through repeated edge relaxations.
+
+In Bellman-Ford we repeatedly update:
+
+$$\text{dist}(u) = \min\bigl(\text{dist}(u),\; w(u,v) + \text{dist}(v)\bigr)$$
+
+In value iteration we repeatedly update:
+
+$$V(s) = \max_a \bigl(R + \gamma V(s')\bigr)$$
+
+The mathematics is surprisingly similar:
+
+- Bellman-Ford propagates **distance** information.
+- Value Iteration propagates **reward/value** information.
+- Both repeatedly apply local updates until reaching a **fixed point**.
+
+The connection is not accidental. The "Bellman" in Bellman-Ford and the Bellman Equation is the same **Richard Bellman** — one of the pioneers of dynamic programming and sequential decision making.
+
+---
+
+## Synchronous vs Asynchronous Updates
+
+One subtle point is the difference between synchronous and asynchronous Bellman updates.
+
+**Synchronous update** — every new value is computed from the *previous* iteration's values:
+
+$$V^{\text{new}}(A) = R(A) + \gamma \, V^{\text{old}}(B)$$
+
+Every state reads from the old value table and writes to a separate new table, so order of updates does not matter. For the chain example, starting from:
+
+$$V^{\text{old}}(A) = 0, \quad V^{\text{old}}(B) = 0, \quad V^{\text{old}}(\text{Goal}) = 100$$
+
+After one synchronous iteration:
+
+$$V^{\text{new}}(B) = 90, \quad V^{\text{new}}(A) = 0$$
+
+A still sees the old value of B — reward information moves only **one hop per iteration**.
+
+**Asynchronous update** — freshly computed values are used immediately. If we update B first and then A in the same pass:
+
+$$V(B) = 90 \quad \Rightarrow \quad V(A) = 0 + 0.9 \times 90 = 81$$
+
+Both states converge in a single pass.
+
+---
+
+This observation made value iteration feel much more like **graph algorithms** than machine learning. At its core, it is repeatedly propagating information through a state graph until the values converge to a fixed point.
+
+The Bellman-Ford analogy reframes RL from "AI magic" into something that feels much closer to **dynamic programming and graph optimization** — a much more familiar mental model for a systems engineer.
