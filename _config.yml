@@ -55,4 +55,7 @@ kramdown:
 #   - vendor/cache/
 #   - vendor/gems/
 #   - vendor/ruby/
+exclude:
+  - CLAUDE.md
+
 permalink: /:title/
