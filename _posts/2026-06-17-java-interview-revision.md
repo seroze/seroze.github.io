@@ -142,6 +142,38 @@ a == b        // false — different objects in memory
 a.equals(b)   // true  — same content
 ```
 
+**`hashCode()` and the contract with `equals()`**
+
+By default, `hashCode()` returns a value derived from the object's memory address — so two `new` objects will have different hashcodes even if their contents are identical.
+
+The contract Java requires:
+
+- If `a.equals(b)` is `true` → `a.hashCode() == b.hashCode()` **must** be true.
+- If `a.hashCode() == b.hashCode()` → `a.equals(b)` is **not necessarily** true (hash collision).
+
+This matters because `HashMap` and `HashSet` use `hashCode()` first to find the bucket, then `equals()` to confirm the match. If you override `equals()` without overriding `hashCode()`, two logically equal objects will land in different buckets and the map/set will treat them as distinct keys.
+
+```java
+class Point {
+    int x, y;
+
+    @Override
+    public boolean equals(Object o) {
+        Point p = (Point) o;
+        return x == p.x && y == p.y;
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(x, y); // must include same fields as equals()
+    }
+}
+
+Set<Point> set = new HashSet<>();
+set.add(new Point(1, 2));
+set.contains(new Point(1, 2)); // true — only works because both methods are overridden
+```
+
 ---
 
 ## Set
