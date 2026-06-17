@@ -263,7 +263,38 @@ ts.higher(20);   // 30 — smallest element strictly > 20
 
 All four return `null` if no such element exists, so null-check before using the result.
 
-C++ equivalents: `ceiling` = `lower_bound`, `higher` = `upper_bound`.
+**Cross-language equivalents** — given a sorted list `a` and query value `x`:
+
+| Java (TreeSet) | C++ | Python (`bisect`) |
+|---|---|---|
+| `ceiling(x)` — smallest ≥ x | `lower_bound(x)` | `a[bisect.bisect_left(a, x)]` |
+| `higher(x)` — smallest > x | `upper_bound(x)` | `a[bisect.bisect_right(a, x)]` |
+| `floor(x)` — largest ≤ x | `*prev(upper_bound(x))` | `a[bisect.bisect_right(a, x) - 1]` |
+| `lower(x)` — largest < x | `*prev(lower_bound(x))` | `a[bisect.bisect_left(a, x) - 1]` |
+
+Python's `bisect_left` and `bisect_right` return **indices**, not values — index into the list to get the element. Always bounds-check the index before using it (an index of `-1` or `>= len(a)` means no such element exists).
+
+```python
+import bisect
+
+a = [10, 20, 30, 50]
+
+# ceiling(25) — smallest >= 25
+i = bisect.bisect_left(a, 25)   # i = 2
+a[i]                             # 30
+
+# higher(20) — smallest > 20
+i = bisect.bisect_right(a, 20)  # i = 2
+a[i]                             # 30
+
+# floor(25) — largest <= 25
+i = bisect.bisect_right(a, 25) - 1  # i = 1
+a[i]                                 # 20
+
+# lower(20) — largest < 20
+i = bisect.bisect_left(a, 20) - 1   # i = 0
+a[i]                                 # 10
+```
 
 ---
 
