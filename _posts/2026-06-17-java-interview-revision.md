@@ -147,4 +147,102 @@ The lambda `k -> new ArrayList<>()` receives the missing key `k` and returns the
 
 ---
 
-*More sections to come — Collections, Sorting patterns, String manipulation.*
+## ArrayList
+
+`ArrayList` is a resizable array. Use it when you need indexed access and don't care about fast insertions at the front.
+
+```java
+List<Integer> list = new ArrayList<>();
+
+list.add(10);       // append to end
+list.add(20);
+list.add(1, 99);    // insert 99 at index 1 — shifts elements right
+
+list.get(0);        // 10  — O(1) random access
+list.set(0, 55);    // replace element at index 0
+list.remove(0);     // remove by index — shifts elements left
+list.remove(Integer.valueOf(99)); // remove by value (need Integer, not int)
+
+list.size();        // number of elements
+list.contains(20);  // true
+list.isEmpty();     // false
+```
+
+Iterate over elements:
+
+```java
+// Index-based
+for (int i = 0; i < list.size(); i++) {
+    System.out.println(list.get(i));
+}
+
+// Enhanced for-loop (preferred when index isn't needed)
+for (int val : list) {
+    System.out.println(val);
+}
+```
+
+Sort an `ArrayList` with `Collections.sort()` or `list.sort()`:
+
+```java
+Collections.sort(list);                        // ascending
+list.sort((a, b) -> b - a);                   // descending via comparator
+```
+
+---
+
+## LinkedList
+
+`LinkedList` is a doubly-linked list. It implements both `List` and `Deque`, so it's commonly used as a **queue** or **stack** in interviews.
+
+```java
+LinkedList<Integer> ll = new LinkedList<>();
+
+// Add elements
+ll.add(1);           // append to tail
+ll.addFirst(0);      // prepend to head
+ll.addLast(2);       // append to tail (same as add)
+
+// Access elements
+ll.get(0);           // O(n) — traverses from head, avoid in hot loops
+ll.getFirst();       // O(1) — peek at head
+ll.getLast();        // O(1) — peek at tail
+
+// Remove elements
+ll.removeFirst();    // remove and return head
+ll.removeLast();     // remove and return tail
+ll.remove(1);        // remove by index
+
+ll.size();
+ll.isEmpty();
+```
+
+Used as a **queue** (FIFO):
+
+```java
+Queue<Integer> queue = new LinkedList<>();
+
+queue.offer(1);   // enqueue — add to tail (prefer over add(), won't throw on capacity)
+queue.offer(2);
+queue.offer(3);
+
+queue.peek();     // 1 — view front without removing
+queue.poll();     // 1 — remove and return front
+```
+
+Used as a **stack** (LIFO) — though `ArrayDeque` is faster in practice:
+
+```java
+Deque<Integer> stack = new LinkedList<>();
+
+stack.push(1);    // push to front
+stack.push(2);
+stack.push(3);
+
+stack.peek();     // 3 — view top
+stack.pop();      // 3 — remove and return top
+```
+
+---
+
+*More sections to come — Sorting patterns, String manipulation.*
