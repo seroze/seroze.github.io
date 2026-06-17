@@ -234,6 +234,102 @@ The lambda `k -> new ArrayList<>()` receives the missing key `k` and returns the
 
 ---
 
+## TreeSet
+
+`TreeSet` stores elements in **sorted order** (natural ordering by default). All operations are O(log n). Use it when you need sorted membership and range queries — things `HashSet` can't do.
+
+```java
+TreeSet<Integer> ts = new TreeSet<>();
+ts.add(10);
+ts.add(30);
+ts.add(20);
+ts.add(50);
+// internal order: [10, 20, 30, 50]
+
+ts.first();   // 10 — smallest element
+ts.last();    // 50 — largest element
+ts.size();    // 4
+ts.contains(20); // true
+```
+
+**Range queries** — the four key methods:
+
+```java
+ts.floor(25);    // 20 — largest element <= 25
+ts.ceiling(25);  // 30 — smallest element >= 25
+ts.lower(20);    // 10 — largest element strictly < 20
+ts.higher(20);   // 30 — smallest element strictly > 20
+```
+
+All four return `null` if no such element exists, so null-check before using the result.
+
+C++ equivalents: `ceiling` = `lower_bound`, `higher` = `upper_bound`.
+
+---
+
+## TreeMap
+
+`TreeMap` is a sorted map — keys are kept in natural order (or a custom comparator). It gives you all the `HashMap` operations plus the same range query methods on keys.
+
+```java
+TreeMap<Integer, String> tm = new TreeMap<>();
+tm.put(10, "ten");
+tm.put(30, "thirty");
+tm.put(20, "twenty");
+tm.put(50, "fifty");
+// key order: 10, 20, 30, 50
+
+tm.firstKey();  // 10
+tm.lastKey();   // 50
+```
+
+**Key-only range queries:**
+
+```java
+tm.floorKey(25);    // 20 — largest key <= 25
+tm.ceilingKey(25);  // 30 — smallest key >= 25
+tm.lowerKey(20);    // 10 — largest key strictly < 20
+tm.higherKey(20);   // 30 — smallest key strictly > 20
+```
+
+**Entry range queries** — same methods but return the full key-value pair:
+
+```java
+Map.Entry<Integer, String> e = tm.floorEntry(25);
+e.getKey();    // 20
+e.getValue();  // "twenty"
+```
+
+**Example — find the closest appointment:**
+
+```java
+// Keys are timestamps, values are appointment names
+TreeMap<Integer, String> calendar = new TreeMap<>();
+calendar.put(900,  "standup");
+calendar.put(1200, "lunch");
+calendar.put(1500, "review");
+
+int now = 1100;
+
+// What's the next appointment from now?
+Map.Entry<Integer, String> next = calendar.ceilingEntry(now);
+// next.getKey() = 1200, next.getValue() = "lunch"
+
+// What was the last appointment before now?
+Map.Entry<Integer, String> prev = calendar.lowerEntry(now);
+// prev.getKey() = 900, prev.getValue() = "standup"
+```
+
+**Submap — get all keys in a range:**
+
+```java
+// Keys from 1000 to 1400 (inclusive on both ends)
+SortedMap<Integer, String> window = calendar.subMap(1000, true, 1400, true);
+// {1200 -> "lunch"}
+```
+
+---
+
 ## ArrayList
 
 `ArrayList` is a resizable array. Use it when you need indexed access and don't care about fast insertions at the front.
