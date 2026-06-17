@@ -293,6 +293,57 @@ abstract class Animal {
 }
 ```
 
+**How Java avoids the diamond problem**
+
+The diamond problem: if class `D` inherits from both `B` and `C`, and both `B` and `C` override a method from their common parent `A`, which version does `D` get?
+
+Java sidesteps this entirely for classes — you can only `extend` one class, so the diamond can never form in the class hierarchy.
+
+```java
+class A { void hello() { System.out.println("A"); } }
+class B extends A { void hello() { System.out.println("B"); } }
+class C extends A { void hello() { System.out.println("C"); } }
+
+// This is a compile error — Java doesn't allow it
+class D extends B, C { }  // ERROR: cannot extend multiple classes
+```
+
+With interfaces it's trickier, because `default` methods (added in Java 8) can have implementations. If two interfaces both define a `default` method with the same signature, the implementing class **must override it** — the compiler forces you to resolve the ambiguity explicitly.
+
+```java
+interface B {
+    default String hello() { return "Hello from B"; }
+}
+
+interface C {
+    default String hello() { return "Hello from C"; }
+}
+
+// Compile error if you don't override hello()
+class D implements B, C {
+    @Override
+    public String hello() {
+        return B.super.hello(); // explicitly pick one, or write your own
+    }
+}
+```
+
+If only one of the interfaces provides a `default` implementation and the other declares the method as abstract, there's no conflict — the concrete default wins automatically.
+
+```java
+interface B {
+    default String hello() { return "Hello from B"; }
+}
+
+interface C {
+    String hello(); // abstract — no implementation
+}
+
+class D implements B, C {
+    // No override needed — B's default satisfies C's contract too
+}
+```
+
 ---
 
 ### How do you make an object immutable?
