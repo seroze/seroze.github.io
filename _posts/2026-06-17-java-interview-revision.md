@@ -69,6 +69,58 @@ PriorityQueue<String> byLength = new PriorityQueue<>((a, b) -> a.length() - b.le
 
 ---
 
+## Comparator — how to tune ordering
+
+A comparator must return:
+- **negative** → `a` comes before `b`
+- **zero** → equal
+- **positive** → `b` comes before `a`
+
+Since `PriorityQueue` is a min-heap, the element the comparator considers "smallest" (most negative) pops first.
+
+**Ascending (smallest first):**
+```java
+(a, b) -> Integer.compare(a, b)   // 2 pops before 5
+```
+
+**Descending (largest first — max-heap):**
+```java
+(a, b) -> Integer.compare(b, a)   // 5 pops before 2
+```
+
+**Custom objects — sort Tweets by timestamp:**
+```java
+// Oldest first
+PriorityQueue<Tweet> pq = new PriorityQueue<>((a, b) -> Integer.compare(a.createdAt, b.createdAt));
+
+// Newest first
+PriorityQueue<Tweet> pq = new PriorityQueue<>((a, b) -> Integer.compare(b.createdAt, a.createdAt));
+```
+
+**Multi-level sort** — age ascending, salary descending:
+```java
+Comparator<Employee> cmp =
+    Comparator.comparingInt((Employee e) -> e.age)
+              .thenComparing((a, b) -> Integer.compare(b.salary, a.salary));
+```
+
+**The one rule to remember:**
+
+> `Integer.compare(X, Y)` means *X pops before Y*.
+
+So if you want the **largest** value out first, put the larger-valued expression first:
+```java
+Integer.compare(b.field, a.field)  // b (larger) comes before a (smaller)
+```
+If you want the **smallest** first:
+```java
+Integer.compare(a.field, b.field)  // a (smaller) comes before b (larger)
+```
+
+Avoid `a - b` style subtraction — it overflows on large integers. Always use `Integer.compare`.
+
+---
+
 ## Strings
 
 Length is a **method** on strings (unlike arrays where it's a field):
