@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "Java Interview Revision — Data Structures Cheatsheet"
+title: "Java Interview Cheatsheet"
 date: 2026-06-17 00:00:00 +0530
 categories: java
 tags: [java, interview, data-structures]
@@ -106,6 +106,7 @@ s.add(1);       // duplicate, ignored
 s.size();        // 2
 s.contains(1);   // true
 s.contains(99);  // false
+s.remove(1);     // removes 1, returns true; returns false if not present
 ```
 
 ---
@@ -118,9 +119,11 @@ Map<String, Integer> map = new HashMap<>();
 map.put("apple", 1);
 map.put("banana", 2);
 
-map.get("apple");              // 1
-map.get("missing");            // null
+map.get("apple");               // 1
+map.get("missing");             // null
 map.getOrDefault("missing", 0); // 0 — safe fallback
+map.remove("apple");            // removes entry, returns the value (1) or null
+map.containsKey("banana");      // true
 ```
 
 `getOrDefault` also accepts a lambda or expression as the default value:
@@ -245,4 +248,93 @@ stack.pop();      // 3 — remove and return top
 
 ---
 
-*More sections to come — Sorting patterns, String manipulation.*
+---
+
+## Commonly Asked Questions
+
+### Abstract Class vs Interface — what's the difference and which is preferred?
+
+| | Abstract Class | Interface |
+|---|---|---|
+| Instantiation | Cannot be instantiated | Cannot be instantiated |
+| Methods | Can have abstract and concrete methods | All methods abstract by default; `default` methods allowed since Java 8 |
+| Fields | Can have instance variables (state) | Only `public static final` constants |
+| Constructors | Yes | No |
+| Inheritance | A class can extend only **one** abstract class | A class can implement **multiple** interfaces |
+| Access modifiers | Methods can be any visibility | Methods are `public` by default |
+
+**Which is preferred?**
+
+Prefer **interfaces** in most cases. They let you:
+- Implement multiple interfaces (avoiding the single-inheritance limit)
+- Program to an abstraction without committing to a class hierarchy
+- Add `default` method implementations without breaking existing code
+
+Use an **abstract class** when:
+- You need to share **state** (instance variables) across subclasses
+- You need a **constructor** to enforce initialization
+- Subclasses are tightly related and share a lot of common behavior that isn't just a contract
+
+```java
+// Interface — defines a contract
+interface Flyable {
+    void fly();
+    default String describe() { return "I can fly"; }
+}
+
+// Abstract class — shares state and partial implementation
+abstract class Animal {
+    private String name;  // shared state
+
+    Animal(String name) { this.name = name; }
+
+    public String getName() { return name; }
+    abstract void speak();  // subclasses must implement
+}
+```
+
+---
+
+### How do you make an object immutable?
+
+An immutable object cannot be modified after construction. The pattern:
+
+1. Make the class `final` so it can't be subclassed.
+2. Make all fields `private final`.
+3. Set all fields only in the constructor.
+4. Provide no setters.
+5. In getters for mutable fields (collections, arrays, other objects), return a **deep copy**, not the original reference.
+
+```java
+import java.util.ArrayList;
+import java.util.List;
+
+public final class Student {
+    private final String name;
+    private final List<String> courses;
+
+    public Student(String name, List<String> courses) {
+        this.name = name;
+        this.courses = new ArrayList<>(courses); // defensive copy on the way in
+    }
+
+    public String getName() {
+        return name; // String is already immutable, safe to return directly
+    }
+
+    public List<String> getCourses() {
+        return new ArrayList<>(courses); // deep copy on the way out
+    }
+}
+```
+
+Why the deep copy in the getter matters:
+
+```java
+Student s = new Student("Alice", List.of("Math", "CS"));
+List<String> c = s.getCourses();
+c.add("Physics");           // modifies the copy, not the internal list
+s.getCourses().size();      // still 2 — object is unaffected
+```
+
+If you returned `courses` directly, the caller could mutate the internal list and break immutability even without a setter.
