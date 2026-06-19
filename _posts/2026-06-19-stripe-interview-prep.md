@@ -413,6 +413,60 @@ A single global queue lets a high-volume merchant monopolise the workers. Instea
 **Real-time payment system with idempotency**
 How would you design a real-time payment system that prevents duplicate charges? Key concept: idempotency keys. A client sends a unique key with each request; the server stores the result against that key and returns the cached result on retries rather than processing the charge again. Design the data model, the key storage, and the expiry policy.
 
+```python
+import hashlib
+import time
+from dataclasses import dataclass, field
+from enum import Enum
+
+class PaymentStatus(Enum):
+    PENDING   = "pending"
+    SUCCEEDED = "succeeded"
+    FAILED    = "failed"
+
+@dataclass
+class PaymentResult:
+    status: PaymentStatus
+    charge_id: str
+    amount: int
+    currency: str
+    created_at: float = field(default_factory=time.time)
+
+class PaymentProcessor:
+    def __init__(self, ttl_seconds: int = 86400):  # keys expire after 24h
+        self._idempotency_store: dict[str, PaymentResult] = {}
+        self._ttl = ttl_seconds
+
+    def charge(self, idempotency_key: str, amount: int, currency: str) -> PaymentResult:
+        # return cached result if this key was seen before
+        if idempotency_key in self._idempotency_store:
+            cached = self._idempotency_store[idempotency_key]
+            if time.time() - cached.created_at < self._ttl:
+                return cached
+            # expired — remove and reprocess
+            del self._idempotency_store[idempotency_key]
+
+        result = self._process_charge(amount, currency)
+        self._idempotency_store[idempotency_key] = result
+        return result
+
+    def _process_charge(self, amount: int, currency: str) -> PaymentResult:
+        # in reality: call card network, write to DB, etc.
+        charge_id = hashlib.sha256(f"{amount}{currency}{time.time()}".encode()).hexdigest()[:16]
+        return PaymentResult(
+            status=PaymentStatus.SUCCEEDED,
+            charge_id=charge_id,
+            amount=amount,
+            currency=currency,
+        )
+```
+
+Key points:
+- Check the store *before* processing — return the cached `PaymentResult` immediately on a duplicate key. The charge logic never runs twice.
+- The idempotency key is supplied by the *client* (e.g. a UUID they generate before the first attempt). The server never generates it.
+- TTL prevents the store from growing unboundedly. 24 hours is Stripe's policy.
+- In production, the store is a database table (not an in-process dict) so it survives restarts and works across multiple server instances. The key column has a `UNIQUE` constraint — a race between two simultaneous requests with the same key is resolved by the DB rejecting one insert.
+
 **Currency exchange algorithm**
 Design an algorithm that converts an amount from one currency to another given a table of exchange rates. Extension: what if a direct rate doesn't exist and you need to chain conversions (USD → EUR → GBP)?
 
@@ -618,6 +672,103 @@ Core components:
 - **Signed document generation** — once all signatures are collected, render the final PDF with signature blocks embedded and store it separately.
 
 Follow-up questions to be ready for: how do you prevent someone from signing twice? (idempotency token in the signing URL) How do you handle a signatory declining? (notify sender, allow resend or void) What if the document expires? (cron job scans for past-deadline `sent` documents and transitions them to `expired`).
+
+```python
+import uuid
+import time
+from dataclasses import dataclass, field
+from enum import Enum
+
+class DocStatus(Enum):
+    DRAFT            = "draft"
+    SENT             = "sent"
+    PARTIALLY_SIGNED = "partially_signed"
+    COMPLETED        = "completed"
+    EXPIRED          = "expired"
+    VOIDED           = "voided"
+
+class SignatoryStatus(Enum):
+    PENDING  = "pending"
+    SIGNED   = "signed"
+    DECLINED = "declined"
+
+@dataclass
+class Signatory:
+    email: str
+    token: str = field(default_factory=lambda: uuid.uuid4().hex)  # unique signing URL token
+    status: SignatoryStatus = SignatoryStatus.PENDING
+    signed_at: float | None = None
+
+@dataclass
+class Document:
+    doc_id: str
+    owner_email: str
+    signatories: list[Signatory]
+    status: DocStatus = DocStatus.DRAFT
+    expires_at: float = field(default_factory=lambda: time.time() + 7 * 86400)  # 7 days
+    audit_log: list[dict] = field(default_factory=list)
+
+    def _log(self, event: str, actor: str, **kwargs):
+        self.audit_log.append({"event": event, "actor": actor, "ts": time.time(), **kwargs})
+
+    def send(self):
+        self.status = DocStatus.SENT
+        self._log("sent", self.owner_email)
+        for s in self.signatories:
+            self._notify(s.email, f"Please sign: /sign/{s.token}")
+
+    def sign(self, token: str) -> str:
+        if time.time() > self.expires_at:
+            return "expired"
+
+        signatory = next((s for s in self.signatories if s.token == token), None)
+        if not signatory:
+            return "invalid_token"
+        if signatory.status == SignatoryStatus.SIGNED:
+            return "already_signed"   # idempotent — no double processing
+
+        signatory.status = SignatoryStatus.SIGNED
+        signatory.signed_at = time.time()
+        self._log("signed", signatory.email)
+
+        if all(s.status == SignatoryStatus.SIGNED for s in self.signatories):
+            self.status = DocStatus.COMPLETED
+            self._log("completed", "system")
+            self._notify(self.owner_email, "All parties have signed.")
+        else:
+            self.status = DocStatus.PARTIALLY_SIGNED
+
+        return "ok"
+
+    def decline(self, token: str) -> str:
+        signatory = next((s for s in self.signatories if s.token == token), None)
+        if not signatory:
+            return "invalid_token"
+        signatory.status = SignatoryStatus.DECLINED
+        self._log("declined", signatory.email)
+        self._notify(self.owner_email, f"{signatory.email} declined to sign.")
+        return "ok"
+
+    def void(self):
+        self.status = DocStatus.VOIDED
+        self._log("voided", self.owner_email)
+
+    def _notify(self, recipient: str, message: str):
+        print(f"[EMAIL] To: {recipient} | {message}")  # replace with real email service
+
+def expire_documents(documents: list[Document]):
+    now = time.time()
+    for doc in documents:
+        if doc.status == DocStatus.SENT and now > doc.expires_at:
+            doc.status = DocStatus.EXPIRED
+            doc._log("expired", "system")
+```
+
+Key points:
+- Each signatory gets a unique `token` (UUID) embedded in their signing URL — this is the idempotency mechanism. The server looks up the token, not a session or login.
+- `sign()` checks `already_signed` before doing any work — calling it twice with the same token is safe.
+- The `audit_log` is append-only; nothing is ever removed from it.
+- `expire_documents` is meant to run as a cron job — scan all `sent` documents and flip any that are past their deadline.
 
 ---
 
