@@ -1,7 +1,7 @@
 ---
 layout: post
 title: "Gradle Basics — Init, Build, Test, and the Wrapper"
-date: 2026-06-19 18:00:00 +0530
+date: 2026-06-19 00:00:00 +0530
 categories: java
 tags: [java, gradle, build-tools]
 author: "Seroze"

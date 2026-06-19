@@ -58,6 +58,16 @@ kramdown:
 
 **Why single `$` breaks things:** kramdown treats `$` as a regular character and processes the content inside as markdown, escaping underscores and backslashes before MathJax ever sees it.
 
+## Post timestamps
+
+Always use `00:00:00 +0530` as the time in post frontmatter:
+
+```yaml
+date: YYYY-MM-DD 00:00:00 +0530
+```
+
+**Why:** GitHub Pages builds at UTC time. Any non-zero time in IST (+0530) may be ahead of UTC at build time, causing Jekyll to silently skip the post. `_config.yml` has `future: true` as a safety net, but always use midnight to avoid confusion.
+
 ## Deploying
 
 ```bash

@@ -1,7 +1,7 @@
 ---
 layout: post
 title: "Streams in Java"
-date: 2026-06-19 12:00:00 +0530
+date: 2026-06-19 00:00:00 +0530
 categories: java
 tags: [java, streams, functional-programming]
 author: "Seroze"

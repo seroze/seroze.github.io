@@ -1,7 +1,7 @@
 ---
 layout: post
 title: "Möbius Function in Competitive Programming"
-date: 2026-06-18 12:00:00 +0530
+date: 2026-06-18 00:00:00 +0530
 categories: competitive-programming
 tags: [competitive-programming, number-theory, mobius]
 author: "Seroze"
