@@ -60,6 +60,32 @@ my-app/
         └── AppTest.java
 ```
 
+**The source directory convention**
+
+Gradle follows the Maven standard layout. The package name becomes a nested directory path under `src/main/java/` and `src/test/java/`. For a package `com.ridesharing`:
+
+```
+src/
+├── main/
+│   └── java/
+│       └── com/
+│           └── ridesharing/
+│               ├── Main.java
+│               ├── Driver.java
+│               └── Trip.java
+└── test/
+    └── java/
+        └── com/
+            └── ridesharing/
+                ├── MainTest.java
+                ├── DriverTest.java
+                └── TripTest.java
+```
+
+The test package mirrors the main package exactly. This is convention, not enforced — but it means test classes get package-private access to the classes they test without needing everything to be `public`.
+
+When Gradle compiles, `src/main/java` goes to `build/classes/java/main/` and `src/test/java` goes to `build/classes/java/test/`. The test classpath includes both so tests can import production classes.
+
 ---
 
 ## The build file
