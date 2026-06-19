@@ -225,6 +225,63 @@ json.dumps(charge, cls=ChargeEncoder)
 
 ---
 
+### Reading and Parsing Files Line by Line
+
+Say you have a file with 100 lines, each containing a transaction: an integer ID, a float amount, and a float fee separated by commas:
+
+```
+1001,49.99,1.50
+1002,120.00,3.60
+1003,9.99,0.30
+...
+```
+
+**Reading and parsing:**
+
+```python
+transactions = []
+
+with open("transactions.txt", "r") as f:
+    for line in f:
+        line = line.strip()          # remove trailing newline and whitespace
+        if not line:                 # skip empty lines
+            continue
+        parts = line.split(",")
+        txn_id = int(parts[0])
+        amount = float(parts[1])
+        fee = float(parts[2])
+        transactions.append((txn_id, amount, fee))
+
+# or more concisely with unpacking
+with open("transactions.txt", "r") as f:
+    for line in f:
+        line = line.strip()
+        if not line:
+            continue
+        txn_id, amount, fee = line.split(",")
+        transactions.append((int(txn_id), float(amount), float(fee)))
+```
+
+**Processing — total revenue, total fees:**
+
+```python
+total_amount = sum(t[1] for t in transactions)
+total_fees   = sum(t[2] for t in transactions)
+net          = total_amount - total_fees
+
+print(f"Transactions: {len(transactions)}")
+print(f"Total amount: {total_amount:.2f}")
+print(f"Total fees:   {total_fees:.2f}")
+print(f"Net revenue:  {net:.2f}")
+```
+
+**Things to always do:**
+- `strip()` every line — trailing `\n` will break `int()`/`float()` silently turning into a `ValueError`
+- Guard against empty lines — files often have a trailing newline that produces a blank last line
+- Use `with open(...)` — it closes the file automatically even if an exception is raised
+
+---
+
 ## Integration Round
 
 *Examples and approach to be added.*
