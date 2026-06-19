@@ -136,6 +136,95 @@ The response includes `has_more: true` if there are more records beyond the curr
 
 ---
 
+### JSON Serialization and Deserialization
+
+REST APIs speak JSON. You need to be comfortable converting between Python objects and JSON without reaching for documentation.
+
+**Serialization — Python → JSON**
+
+```python
+import json
+
+customer = {
+    "id": "cus_123",
+    "name": "Alice",
+    "email": "alice@example.com",
+    "balance": 0,
+    "metadata": {"plan": "pro"}
+}
+
+# Python dict → JSON string
+json_string = json.dumps(customer)
+print(json_string)
+# '{"id": "cus_123", "name": "Alice", "email": "alice@example.com", ...}'
+
+# Pretty-print (useful for debugging)
+print(json.dumps(customer, indent=2))
+
+# Python dict → JSON file
+with open("customer.json", "w") as f:
+    json.dump(customer, f, indent=2)
+```
+
+**Deserialization — JSON → Python**
+
+```python
+import json
+
+# JSON string → Python dict
+json_string = '{"id": "cus_123", "name": "Alice", "balance": 0}'
+customer = json.loads(json_string)
+print(customer["name"])   # Alice
+print(type(customer))     # <class 'dict'>
+
+# JSON file → Python dict
+with open("customer.json", "r") as f:
+    customer = json.load(f)
+```
+
+**Serializing custom objects**
+
+`json.dumps` only handles built-in types (dict, list, str, int, float, bool, None). For custom classes you need a custom encoder or convert to dict first:
+
+```python
+import json
+from dataclasses import dataclass, asdict
+
+@dataclass
+class Charge:
+    id: str
+    amount: int
+    currency: str
+
+charge = Charge(id="ch_123", amount=2000, currency="usd")
+
+# Option 1: convert to dict manually
+json.dumps({"id": charge.id, "amount": charge.amount, "currency": charge.currency})
+
+# Option 2: use asdict for dataclasses
+json.dumps(asdict(charge))
+
+# Option 3: custom encoder
+class ChargeEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, Charge):
+            return asdict(obj)
+        return super().default(obj)
+
+json.dumps(charge, cls=ChargeEncoder)
+```
+
+**Key distinction to remember:**
+
+| | String | File |
+|--|--------|------|
+| Serialize | `json.dumps(obj)` | `json.dump(obj, f)` |
+| Deserialize | `json.loads(s)` | `json.load(f)` |
+
+`dumps`/`loads` — the `s` stands for string. `dump`/`load` — no `s`, takes a file handle.
+
+---
+
 ## Integration Round
 
 *Examples and approach to be added.*
