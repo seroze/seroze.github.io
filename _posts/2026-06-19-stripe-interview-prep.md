@@ -56,7 +56,69 @@ Disable auto-completion before every technical round — it won't be available i
 
 ## Bug Bash
 
-*Examples and approach to be added.*
+This round tests the scientific method in an unfamiliar codebase — not your ability to memorize APIs.
+
+**What you're given:** a clone of a slightly modified internal project, a description of a reported failure, and a test suite where some tests are failing. Your job is to find and fix the bug.
+
+### What the bugs look like
+
+They're rarely algorithmic. Expect logic or configuration errors:
+
+- **Validation too strict** — regex rejecting valid emails containing `+`, or a parser rejecting edge-case input it should accept
+- **Platform assumptions** — code that writes to a path without checking the directory exists first; works on the developer's Mac, fails elsewhere
+- **Logic gaps** — a condition that misses a specific case, e.g. an `if` that handles `status == "active"` and `status == "inactive"` but silently drops `"pending"`
+- **Wrong library usage** — passing arguments in the wrong order, using the wrong method variant, off-by-one in a range
+
+### Debugging methodology
+
+Randomly changing lines until tests pass will fail you. Follow a disciplined five-step process:
+
+**1. Reproduction — confirm the failure first**
+
+Run the failing tests immediately. Do not look at the code yet. Do not touch the code yet. You need a stable, confirmed failure before you can tell whether any change you make actually fixed anything. If you change code before reproducing, you lose your baseline.
+
+```bash
+pytest tests/ -v
+# note exactly which tests fail and what the error message says
+```
+
+**2. Isolation — read the stack trace, not the whole codebase**
+
+Don't start reading files top to bottom. Go straight to the stack trace. Find the exact line where the exception is raised or where the assertion fails. That's your entry point into the code. Everything above it in the trace is call context — read upward only as needed.
+
+**3. Hypothesis generation — say it out loud**
+
+Form a specific, falsifiable statement before touching anything:
+
+> "I suspect the user ID is `None` here because the lookup is returning early"
+
+> "I think this regex doesn't account for `+` in the local part of the email"
+
+Vague suspicions ("something seems off here") lead to random edits. A named hypothesis leads to a targeted test.
+
+**4. Verification — add a print, confirm, then fix**
+
+Add a `print` or `breakpoint()` just before the suspect line to confirm your hypothesis:
+
+```python
+print(f"DEBUG user_id={user_id!r}")   # is it None?
+print(f"DEBUG pattern match: {re.match(pattern, email)!r}")
+breakpoint()   # drop into pdb at runtime
+```
+
+Run only the failing test — not the whole suite — to iterate fast. Once confirmed, make the minimal fix.
+
+**5. Cleanup — leave it cleaner than you found it**
+
+Remove every `print` and `breakpoint()`. Run the full test suite. All previously passing tests must still pass. Commit with a clear message describing what was wrong and why.
+
+### How to prepare
+
+The best practice is working with real bugs in real codebases:
+
+1. Go to the [requests](https://github.com/psf/requests) or [httpx](https://github.com/encode/httpx) GitHub repo. Filter issues by the `bug` label. Pick a closed one. Read the issue description, find the code that was broken, then read the PR that fixed it. Notice how small the fix usually is relative to the diagnosis work.
+
+2. Clone pandas or any library you know. Find a function, introduce a subtle break — change `<` to `<=`, swap two arguments, remove a `.strip()`. Then write a test that catches it and use the methodology above to find it. This builds the muscle memory of going from a failing test to a root cause without flailing.
 
 ---
 
