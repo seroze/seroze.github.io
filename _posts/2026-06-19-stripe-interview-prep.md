@@ -380,7 +380,101 @@ File modes:
 
 ## Integration Round
 
-*Examples and approach to be added.*
+This round is less about algorithms and more about how you think through interfaces, data structures, and system design at the code level. You'll be asked to build something real — not pseudocode.
+
+**Language note:** Prefer Python over Java here. Less boilerplate means more time thinking about the actual problem. That said, Python's dynamic typing is a double-edged sword — a typo in a variable name won't be caught at compile time and will silently blow up at runtime. Be deliberate: name variables clearly, re-read your code before running, and test incrementally.
+
+---
+
+### Question bank
+
+**Notification delivery system**
+Design the architecture for delivering notifications to customers. Think about: delivery channels (email, SMS, webhook), retry logic for failed deliveries, deduplication so a customer doesn't receive the same notification twice, and ordering guarantees.
+
+**Real-time payment system with idempotency**
+How would you design a real-time payment system that prevents duplicate charges? Key concept: idempotency keys. A client sends a unique key with each request; the server stores the result against that key and returns the cached result on retries rather than processing the charge again. Design the data model, the key storage, and the expiry policy.
+
+**Currency exchange algorithm**
+Design an algorithm that converts an amount from one currency to another given a table of exchange rates. Extension: what if a direct rate doesn't exist and you need to chain conversions (USD → EUR → GBP)?
+
+**Parse currency/shipping rate string**
+Parse a string in this format:
+```
+USD:CAD:DHL:5, USD:GBP:FedEx:3, EUR:USD:UPS:8
+```
+Each entry represents: `source_currency:target_currency:carrier:rate`. Write a method that takes a source currency, target currency, and amount, and returns the converted amount and the carrier to use.
+
+```python
+def parse_rates(rate_string):
+    rates = {}
+    for entry in rate_string.split(", "):
+        src, tgt, carrier, rate = entry.split(":")
+        rates[(src, tgt)] = (carrier, float(rate))
+    return rates
+
+def convert(rates, src, tgt, amount):
+    if (src, tgt) not in rates:
+        raise ValueError(f"No rate for {src} -> {tgt}")
+    carrier, rate = rates[(src, tgt)]
+    return amount * rate, carrier
+```
+
+**Invoice scheduler**
+Design a system for scheduling invoices to be sent at a future time. Think about: the data model for a scheduled job, how you'd persist and poll pending invoices, handling clock skew, and what happens if the scheduler crashes mid-send.
+
+**CSV processing and validation**
+Given a CSV file of transactions, parse and validate the data. Common validation rules: required fields present, numeric fields are valid numbers, dates are in the expected format, no duplicate IDs. Return a list of valid rows and a list of errors with line numbers.
+
+**Shipping cost calculator**
+Given a list of orders each with an associated country, calculate the shipping cost for each order. The rate table maps country → cost. Handle missing countries, bulk discounts, and free shipping thresholds.
+
+**Server load balancer**
+Build the data structures and logic to manage a pool of servers and distribute client connections across them. Operations to implement:
+
+- `connect(client_id)` — assign a client to a server using the balancing strategy
+- `disconnect(client_id)` — release a client's connection
+- `shutdown(server_id)` — graceful shutdown: migrate all existing connections from this server to others, then remove it from the pool
+
+Balancing strategies to know:
+- **Round robin** — cycle through servers in order; simple, assumes homogeneous servers
+- **Least connections** — assign to the server with the fewest active connections; better for variable-length sessions
+- **Consistent hashing** — hash the client ID to a point on a ring; each server owns a range; adding/removing a server only remaps a fraction of clients — important for stateful sessions
+
+```python
+from collections import defaultdict
+
+class LoadBalancer:
+    def __init__(self, servers):
+        self.servers = list(servers)        # available server IDs
+        self.connections = defaultdict(set) # server_id -> set of client_ids
+        self.client_map = {}                # client_id -> server_id
+        self._rr_index = 0
+
+    def connect(self, client_id):
+        server = self.servers[self._rr_index % len(self.servers)]
+        self._rr_index += 1
+        self.connections[server].add(client_id)
+        self.client_map[client_id] = server
+        return server
+
+    def disconnect(self, client_id):
+        server = self.client_map.pop(client_id, None)
+        if server:
+            self.connections[server].discard(client_id)
+
+    def shutdown(self, server_id):
+        self.servers.remove(server_id)
+        for client_id in list(self.connections[server_id]):
+            self.disconnect(client_id)
+            self.connect(client_id)          # reassign to remaining servers
+        del self.connections[server_id]
+```
+
+**Word Search (LeetCode)**
+Given a 2D board of characters and a word, return true if the word exists in the grid following adjacent cells (horizontal/vertical, no reuse). Classic DFS with backtracking — mark a cell visited before recursing, unmark on the way back out.
+
+**Sales data aggregation**
+Given a list of sales records with varying input constraints (date range, region, product), calculate aggregate metrics. Focus on: grouping efficiently with dicts/defaultdict, handling missing keys gracefully, and clarifying the expected output format before writing any code.
 
 ---
 
