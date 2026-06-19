@@ -10,6 +10,8 @@ published: true
 
 *My preparation notes for the Stripe interview process. Using Python throughout and Zed as the editor.*
 
+> **Disclaimer:** The views and opinions expressed in this post are entirely my own and based on publicly available information. The problem statements included here were sourced from various online communities and discussion forums — they are not confirmed to be actual Stripe interview questions. This is a personal study guide, not an official representation of Stripe's hiring process.
+
 ---
 
 ## The process
