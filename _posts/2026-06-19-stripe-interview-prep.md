@@ -280,6 +280,40 @@ print(f"Net revenue:  {net:.2f}")
 - Guard against empty lines — files often have a trailing newline that produces a blank last line
 - Use `with open(...)` — it closes the file automatically even if an exception is raised
 
+**Does `for line in f` load the whole file into memory?**
+
+No — iterating over a file object in Python is lazy. It reads one line at a time using the OS's buffered I/O (typically 8KB chunks internally), but exposes it to you one line at a time. The whole file is never in memory at once. This is safe and efficient even for multi-GB files.
+
+The things that *do* load the whole file into memory: `f.read()` (one giant string) and `f.readlines()` (list of all lines). Avoid these for large files — use the `for line in f` loop instead.
+
+**Writing to a file:**
+
+```python
+transactions = [
+    (1001, 49.99, 1.50),
+    (1002, 120.00, 3.60),
+    (1003, 9.99, 0.30),
+]
+
+# Write (overwrites if file exists)
+with open("output.txt", "w") as f:
+    for txn_id, amount, fee in transactions:
+        f.write(f"{txn_id},{amount},{fee}\n")
+
+# Append (adds to end of file without overwriting)
+with open("output.txt", "a") as f:
+    f.write(f"{1004},{75.00},{2.25}\n")
+```
+
+File modes:
+
+| Mode | Behaviour |
+|------|-----------|
+| `"r"` | Read (default) — error if file doesn't exist |
+| `"w"` | Write — creates file if missing, **truncates if it exists** |
+| `"a"` | Append — creates file if missing, preserves existing content |
+| `"r+"` | Read and write — file must exist |
+
 ---
 
 ## Integration Round
