@@ -348,6 +348,34 @@ This runs `test_add` three times with different inputs and reports each separate
 
 ---
 
+## How Python import resolution actually works (and why `src/` requires installing)
+
+When you write `from cat_images.client import CatClient`, Python takes the first segment `cat_images` and looks for a directory with that exact name inside each entry in `sys.path`. It does **not** search recursively.
+
+So if your project root is in `sys.path`, Python looks for `<project-root>/cat_images/` — which doesn't exist. The actual package lives at `<project-root>/src/cat_images/`. That `src/` layer in between is what breaks the import.
+
+**Why `from src.cat_images.client import ...` works without installing**
+
+Because `src` is a real directory sitting directly in the project root. Python finds `src/` → `cat_images/` → `client.py` by traversing the import path segments. It's treating `src` as a plain namespace, not a package boundary. It works, but it's an ugly import path and the wrong approach.
+
+**Why `uv pip install -e .` fixes it**
+
+An editable install reads `pyproject.toml`, sees the package source is in `src/`, and registers `src/` itself as a path in the venv's `site-packages`. Now Python can find `cat_images` directly. This is the intended workflow for the `src/` layout — it forces you to install before importing as a proper package, which prevents accidentally importing from your working tree instead of the installed package.
+
+**Why VSCode still warns after installing**
+
+Pylance (VSCode's type checker) does static analysis — it doesn't execute the venv to discover editable install paths the way the Python runtime does. You need to tell it explicitly where to look. Add this to `.vscode/settings.json`:
+
+```json
+{
+  "python.analysis.extraPaths": ["src"]
+}
+```
+
+This tells Pylance to also look in `src/` when resolving imports, matching what the editable install does at runtime.
+
+---
+
 ## `uv` vs `pip` — when to use which
 
 | | `uv` | `pip` |
