@@ -451,6 +451,8 @@ class LoadBalancer:
         self._rr_index = 0
 
     def connect(self, client_id):
+        if not self.servers:
+            raise RuntimeError("No servers available")
         server = self.servers[self._rr_index % len(self.servers)]
         self._rr_index += 1
         self.connections[server].add(client_id)
@@ -463,15 +465,91 @@ class LoadBalancer:
             self.connections[server].discard(client_id)
 
     def shutdown(self, server_id):
+        # remove from rotation first so connect() won't pick it
         self.servers.remove(server_id)
+        # migrate every existing client to a new server
         for client_id in list(self.connections[server_id]):
             self.disconnect(client_id)
-            self.connect(client_id)          # reassign to remaining servers
+            self.connect(client_id)
         del self.connections[server_id]
+
+    def least_connections_connect(self, client_id):
+        server = min(self.servers, key=lambda s: len(self.connections[s]))
+        self.connections[server].add(client_id)
+        self.client_map[client_id] = server
+        return server
 ```
+
+Key points for the interview:
+- Remove the server from `self.servers` *before* migrating connections so that `connect()` during migration doesn't route back to the shutting-down server.
+- `list(self.connections[server_id])` — copy the set before iterating because `disconnect` mutates it.
+- Least-connections just needs `min(..., key=lambda s: len(self.connections[s]))` — one line once the data structure is in place.
+
+**Invoice reminder email subjects**
+Your invoicing system needs a configurable reminder schedule. Given an invoice and a schedule of day offsets relative to the due date, output the subject line of every email that would be sent, in sorted (chronological) order.
+
+Example schedule: send an email 10 days before the due date, on the due date, 20 days after, and 30 days after.
+
+```python
+from datetime import date, timedelta
+
+SCHEDULE = [
+    (-10, "Reminder: Invoice #{id} is due in 10 days"),
+    (0,   "Invoice #{id} is due today"),
+    (20,  "Invoice #{id} is 20 days overdue — please pay"),
+    (30,  "Final notice: Invoice #{id} is 30 days overdue"),
+]
+
+def email_subjects(invoice_id: str, due_date: date, schedule=SCHEDULE) -> list[str]:
+    emails = []
+    for offset, template in schedule:
+        send_date = due_date + timedelta(days=offset)
+        subject = template.format(id=invoice_id)
+        emails.append((send_date, subject))
+
+    emails.sort(key=lambda x: x[0])        # sort chronologically
+    return [subject for _, subject in emails]
+
+# Example
+subjects = email_subjects("INV-001", date(2024, 3, 15))
+for s in subjects:
+    print(s)
+# Reminder: Invoice #INV-001 is due in 10 days
+# Invoice #INV-001 is due today
+# Invoice #INV-001 is 20 days overdue — please pay
+# Final notice: Invoice #INV-001 is 30 days overdue
+```
+
+The schedule is just a list of `(offset, template)` tuples — fully configurable, no special-casing. Sorting on `send_date` (a `date` object) is naturally chronological. The subject template uses `.format(id=...)` so the invoice ID is injected without hardcoding.
 
 **Word Search (LeetCode)**
 Given a 2D board of characters and a word, return true if the word exists in the grid following adjacent cells (horizontal/vertical, no reuse). Classic DFS with backtracking — mark a cell visited before recursing, unmark on the way back out.
+
+```python
+def exist(board: list[list[str]], word: str) -> bool:
+    rows, cols = len(board), len(board[0])
+
+    def dfs(r, c, i):
+        if i == len(word):
+            return True
+        if r < 0 or r >= rows or c < 0 or c >= cols or board[r][c] != word[i]:
+            return False
+        tmp, board[r][c] = board[r][c], "#"    # mark visited in-place
+        found = (dfs(r+1, c, i+1) or
+                 dfs(r-1, c, i+1) or
+                 dfs(r, c+1, i+1) or
+                 dfs(r, c-1, i+1))
+        board[r][c] = tmp                       # restore on the way back out
+        return found
+
+    return any(dfs(r, c, 0) for r in range(rows) for c in range(cols))
+```
+
+Key points:
+- Temporarily overwrite the cell with `"#"` to mark it visited — no separate `visited` set needed.
+- Restore the cell after the recursive call returns (backtracking). Without this, the mutation from one DFS path would corrupt subsequent paths.
+- The base case `i == len(word)` fires when every character has been matched — return `True` immediately.
+- Short-circuit with `or` — as soon as one direction succeeds, stop exploring.
 
 **Sales data aggregation**
 Given a list of sales records with varying input constraints (date range, region, product), calculate aggregate metrics. Focus on: grouping efficiently with dicts/defaultdict, handling missing keys gracefully, and clarifying the expected output format before writing any code.
