@@ -388,8 +388,27 @@ This round is less about algorithms and more about how you think through interfa
 
 ### Question bank
 
-**Notification delivery system**
-Design the architecture for delivering notifications to customers. Think about: delivery channels (email, SMS, webhook), retry logic for failed deliveries, deduplication so a customer doesn't receive the same notification twice, and ordering guarantees.
+**Webhook delivery system**
+Design an architecture for delivering webhook notifications to customers when a payment event occurs. The system must send HTTP requests with event payloads to all predefined merchant URLs. Requirements: payment events must never be lost, third-party endpoint failures must be retried, and merchants need a dashboard to view the history of all webhook attempts.
+
+Core architecture:
+- When a payment occurs, persist the event to a durable queue (e.g. a `webhook_events` DB table or message queue) *before* attempting delivery — this is what guarantees no event is lost.
+- A worker pool picks up pending events and POSTs to each registered endpoint. On failure (non-2xx or timeout), write the attempt to a `webhook_attempts` log and re-enqueue with exponential backoff.
+- Each attempt (timestamp, status code, response body, latency) is stored so the dashboard can show the full delivery history per event.
+
+```
+Payment Service → [webhook_events table] → Delivery Workers → Merchant URL
+                                                ↓
+                                       [webhook_attempts log] → Dashboard API
+```
+
+Retry policy: back off exponentially (1s, 2s, 4s, 8s…) up to a max (e.g. 72 hours), then mark the event as permanently failed and alert the merchant.
+
+**Follow-up 1: How would you add rate limiting?**
+Use a sliding window per merchant — cap outgoing webhook requests to N per minute. Before dispatching a delivery, check the counter. If the merchant is at the limit, delay the attempt (reschedule it rather than dropping it). See the rate limiter question below.
+
+**Follow-up 2: Some merchants receive huge volumes while others receive very few. How do you ensure small merchants aren't starved?**
+A single global queue lets a high-volume merchant monopolise the workers. Instead, use **per-merchant queues** with round-robin dispatch across merchants. Each worker iteration picks one event from merchant A, one from merchant B, one from merchant C — regardless of how full each queue is. High-volume merchants get proportionally more throughput as queue depth grows, but they can never block small merchants entirely.
 
 **Real-time payment system with idempotency**
 How would you design a real-time payment system that prevents duplicate charges? Key concept: idempotency keys. A client sends a unique key with each request; the server stores the result against that key and returns the cached result on retries rather than processing the charge again. Design the data model, the key storage, and the expiry policy.
@@ -550,6 +569,157 @@ Key points:
 - Restore the cell after the recursive call returns (backtracking). Without this, the mutation from one DFS path would corrupt subsequent paths.
 - The base case `i == len(word)` fires when every character has been matched — return `True` immediately.
 - Short-circuit with `or` — as soon as one direction succeeds, stop exploring.
+
+**Rate limiter (100 requests per minute per user)**
+Design a rate limiter that allows each unique user at most 100 requests per minute. The classic approach is a **sliding window** — track the timestamps of recent requests and evict ones outside the window.
+
+```python
+import time
+from collections import deque
+
+class RateLimiter:
+    def __init__(self, max_requests: int = 100, window_seconds: int = 60):
+        self.max_requests = max_requests
+        self.window = window_seconds
+        self.user_windows: dict[str, deque] = {}
+
+    def is_allowed(self, user_id: str) -> bool:
+        now = time.time()
+        if user_id not in self.user_windows:
+            self.user_windows[user_id] = deque()
+
+        window = self.user_windows[user_id]
+        # evict timestamps that have fallen outside the window
+        while window and window[0] <= now - self.window:
+            window.popleft()
+
+        if len(window) < self.max_requests:
+            window.append(now)
+            return True
+        return False   # rate limited — caller should return 429
+```
+
+Key points:
+- `deque` with `popleft()` is O(1) for eviction vs a list which is O(n).
+- Evict *before* checking the count — otherwise stale timestamps inflate the count.
+- At scale, replace the in-process dict with Redis (use a sorted set keyed by `user_id`, scored by timestamp). This makes it work across multiple server instances.
+- Trade-off: sliding window is accurate but uses O(requests) memory per user. Fixed window (just a counter + reset time) uses O(1) but allows bursts at window boundaries.
+
+---
+
+**Document signing system (Docusign-like)**
+Design the architecture for a system where a sender uploads a document, specifies signatories, and each signatory receives a link to sign. The document is considered complete when all parties have signed.
+
+Core components:
+- **Document store** — store the original PDF in object storage (S3). Never mutate the original; each signature creates a new version.
+- **Signing workflow state machine** — track state per document: `draft → sent → partially_signed → completed | expired | voided`. Each signatory has their own `pending → signed | declined` state.
+- **Audit trail** — every event (sent, viewed, signed, declined) is appended to an immutable log with timestamp and IP.
+- **Notification service** — email each signatory when it's their turn. Email the sender when all parties have signed.
+- **Signed document generation** — once all signatures are collected, render the final PDF with signature blocks embedded and store it separately.
+
+Follow-up questions to be ready for: how do you prevent someone from signing twice? (idempotency token in the signing URL) How do you handle a signatory declining? (notify sender, allow resend or void) What if the document expires? (cron job scans for past-deadline `sent` documents and transitions them to `expired`).
+
+---
+
+**Anti-fraud system — CSV aggregation**
+Given a CSV file with columns `transaction_type`, `currency`, `date`, `amount`, sum all amounts grouped by `(date, transaction_type)`.
+
+```python
+import csv
+from collections import defaultdict
+
+def aggregate(filename: str) -> dict[tuple, float]:
+    totals: dict[tuple, float] = defaultdict(float)
+
+    with open(filename) as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            key = (row["date"], row["transaction_type"])
+            totals[key] += float(row["amount"])
+
+    return dict(totals)
+
+# Example output:
+# {("2024-03-01", "charge"): 15000.0, ("2024-03-01", "refund"): 450.0, ...}
+```
+
+For fraud detection, flag groups that exceed a threshold:
+
+```python
+def flag_suspicious(totals: dict[tuple, float], threshold: float = 10000.0):
+    return {k: v for k, v in totals.items() if v > threshold}
+```
+
+Key points: `csv.DictReader` uses the header row as keys — no manual column indexing. `defaultdict(float)` starts every key at 0.0 so `+=` works without an existence check.
+
+---
+
+**Brace Expansion I (LeetCode 1087)**
+Given a string like `"{a,b,c}d{e,f}"`, return all words it expands to, sorted. Each `{...}` block is a choice — pick exactly one character from it.
+
+```python
+def expand(s: str) -> list[str]:
+    groups = []
+    i = 0
+    while i < len(s):
+        if s[i] == '{':
+            j = s.index('}', i)
+            groups.append(sorted(s[i+1:j].split(',')))
+            i = j + 1
+        else:
+            groups.append([s[i]])
+            i += 1
+
+    result = ['']
+    for group in groups:
+        result = [prefix + c for prefix in result for c in group]
+    return sorted(result)
+
+# expand("{a,b}c{d,e}") -> ["acd", "ace", "bcd", "bce"]
+```
+
+Build the result incrementally: start with `['']` and for each group, take the Cartesian product of current prefixes × current group choices.
+
+---
+
+**Brace Expansion II (LeetCode 1096)**
+Harder variant — braces can be nested and concatenation happens implicitly. `"{a{b,c}}"` → `["ab","ac"]`, `"{a,b}{c,{d,e}}"` → `["ac","ad","ae","bc","bd","be"]`.
+
+Approach: recursive parser. A comma at depth 0 separates alternatives; everything else is concatenation. Each level returns a sorted deduplicated list of strings.
+
+```python
+def braceExpansionII(expression: str) -> list[str]:
+    def parse(expr: str) -> list[str]:
+        groups = [['']]   # list of "alternatives"; each alternative is a list of prefixes
+        depth = 0
+        start = 0
+
+        for i, c in enumerate(expr):
+            if c == '{':
+                if depth == 0:
+                    start = i + 1
+                depth += 1
+            elif c == '}':
+                depth -= 1
+                if depth == 0:
+                    sub = parse(expr[start:i])
+                    groups[-1] = [a + b for a in groups[-1] for b in sub]
+            elif c == ',' and depth == 0:
+                groups.append([''])
+            elif depth == 0:
+                groups[-1] = [a + c for a in groups[-1]]
+
+        return sorted(set(w for g in groups for w in g))
+
+    return parse(expression)
+```
+
+Key points:
+- Track `depth` to know when you're inside a nested `{}` — only act on `,` and plain characters at depth 0.
+- On closing `}` at depth 0: recursively parse the inner content and take the Cartesian product with the current group's prefixes.
+- Deduplicate with `set` at each level since `{a,a}` should produce `["a"]` not `["a","a"]`.
+
+---
 
 **Sales data aggregation**
 Given a list of sales records with varying input constraints (date range, region, product), calculate aggregate metrics. Focus on: grouping efficiently with dicts/defaultdict, handling missing keys gracefully, and clarifying the expected output format before writing any code.
