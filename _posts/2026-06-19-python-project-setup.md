@@ -83,6 +83,25 @@ my-project/
 
 ---
 
+## Python naming conventions
+
+| Construct | Convention | Example |
+|---|---|---|
+| Module / file | `snake_case` | `user_service.py`, `auth_utils.py` |
+| Package / directory | `snake_case` | `my_project/`, `http_client/` |
+| Class | `PascalCase` | `UserService`, `HttpClient` |
+| Function / method | `snake_case` | `get_user()`, `parse_response()` |
+| Variable | `snake_case` | `user_id`, `max_retries` |
+| Constant | `UPPER_SNAKE_CASE` | `MAX_CONNECTIONS`, `DEFAULT_TIMEOUT` |
+| Private method / attribute | `_leading_underscore` | `_validate()`, `_cache` |
+| Name-mangled (class-private) | `__double_leading` | `__secret`, `__init_state()` |
+| Type alias | `PascalCase` | `UserId = int`, `ResponseMap = dict[str, Any]` |
+| Dunder / magic method | `__double_both__` | `__init__`, `__repr__`, `__len__` |
+
+These follow [PEP 8](https://peps.python.org/pep-0008/), the official Python style guide.
+
+---
+
 ## `pyproject.toml` — the modern config file
 
 `pyproject.toml` is the single file for project metadata, dependencies, and tool config. It replaces `setup.py`, `setup.cfg`, and `requirements.txt` for most purposes.
