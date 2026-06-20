@@ -102,6 +102,60 @@ These follow [PEP 8](https://peps.python.org/pep-0008/), the official Python sty
 
 ---
 
+## Google's Python conventions
+
+[Google's Python Style Guide](https://google.github.io/styleguide/pyguide.html) builds on PEP 8 but adds a few opinions of its own. These are the ones worth internalizing:
+
+### Naming, the Google way
+
+Google spells out the casing rules explicitly. They line up with PEP 8 above, but the guide phrases them as a table you can memorize:
+
+| Type | Convention | Example |
+|---|---|---|
+| Module | `lower_with_under` | `socket_server` |
+| Package | `lower_with_under` | `my_package` |
+| Class / Exception | `CapWords` (PascalCase) | `HttpClient`, `ValueError` |
+| Function / Method | `lower_with_under()` | `send_request()` |
+| Global / Class constant | `CAPS_WITH_UNDER` | `MAX_RETRIES` |
+| Variable / Parameter | `lower_with_under` | `retry_count` |
+| Instance var (public) | `lower_with_under` | `self.user_id` |
+| Instance var (protected) | `_lower_with_under` | `self._cache` |
+
+Google explicitly **avoids** `__double_leading_underscore` for "private" attributes — they prefer a single underscore, because name mangling is rarely worth the friction.
+
+### Things Google is opinionated about
+
+- **No single-character names** except for counters/iterators (`i`, `j`), `e` in `except` clauses, and `f` for file handles. Avoid `l`, `O`, `I` — they look like `1` and `0`.
+- **No "dunder" naming for your own modules** — names like `__author__` are discouraged.
+- **Prefer descriptive names over abbreviations.** `error_count`, not `err_cnt`.
+- **`CapWords` for class names even when they're acronyms** — `HttpServer`, not `HTTPServer`.
+- **Module names match the file name** — keep them short and `lower_with_under`.
+- **Use one statement per line**, and keep lines ≤ 80 chars (PEP 8 allows 79; Google says 80).
+
+### Docstrings
+
+Google has a distinctive docstring style — sectioned with `Args:`, `Returns:`, `Raises:`:
+
+```python
+def fetch_user(user_id: int, *, retries: int = 3) -> User:
+    """Fetches a user by ID.
+
+    Args:
+        user_id: The unique identifier of the user.
+        retries: Number of times to retry on failure.
+
+    Returns:
+        The User object matching the given ID.
+
+    Raises:
+        UserNotFoundError: If no user exists with that ID.
+    """
+```
+
+This is the "Google style" you'll see picked up by tools like Sphinx's Napoleon extension. The alternative is NumPy or reST style — pick one and stay consistent across the project.
+
+---
+
 ## `pyproject.toml` — the modern config file
 
 `pyproject.toml` is the single file for project metadata, dependencies, and tool config. It replaces `setup.py`, `setup.cfg`, and `requirements.txt` for most purposes.
