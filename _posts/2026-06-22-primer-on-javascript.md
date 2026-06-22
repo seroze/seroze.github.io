@@ -132,6 +132,30 @@ A few array basics worth learning early: `push()` / `pop()` (add/remove at the
 end), `shift()` / `unshift()` (front), `slice()`, `indexOf()`, and the
 higher-order ones like `map()`, `filter()`, and `forEach()`.
 
+### Creating an array of size n
+
+Use the `Array(n)` constructor together with `.fill()` to get an array of a
+fixed size with a default value:
+
+```javascript
+const zeros = new Array(5).fill(0);     // [0, 0, 0, 0, 0]
+const ones  = new Array(3).fill(1);     // [1, 1, 1]
+```
+
+If you need each element computed from its index, use `Array.from()`:
+
+```javascript
+// [0, 1, 2, 3, 4]
+const seq = Array.from({ length: 5 }, (_, i) => i);
+
+// 2D array (3x3 grid of zeros) — note: build each row separately
+const grid = Array.from({ length: 3 }, () => new Array(3).fill(0));
+```
+
+> **Heads up:** don't write `new Array(3).fill(new Array(3).fill(0))` for a 2D
+> grid — every row would be the *same* array reference, so changing one row
+> changes all of them. Use `Array.from` as shown above.
+
 ### Checking if an element is in an array
 
 Use `includes()` — it returns a boolean and is the cleanest way to check
@@ -155,6 +179,15 @@ if (arr.indexOf(20) !== -1) {
     console.log("found it");
 }
 ```
+
+<span style="color:red">Note: `indexOf()` returns only the **first** matching
+index, even if the value appears multiple times in the array.</span>
+
+```javascript
+[5, 7, 5, 9].indexOf(5);   // 0, not 2 — only the first match
+```
+
+(If you need the last one, use `lastIndexOf()`.)
 
 ## String utility methods
 
