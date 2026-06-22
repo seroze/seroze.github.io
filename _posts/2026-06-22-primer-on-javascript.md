@@ -189,6 +189,38 @@ index, even if the value appears multiple times in the array.</span>
 
 (If you need the last one, use `lastIndexOf()`.)
 
+### Sorting: always pass a comparator
+
+By default `sort()` converts elements to **strings** and sorts
+lexicographically. This produces nonsense for numbers:
+
+```javascript
+const nums = [1, 2, 10, 5];
+
+nums.sort();
+
+console.log(nums);   // [1, 10, 2, 5]  ❌
+```
+
+`10` comes before `2` because the string `"10"` is less than `"2"`.
+
+<span style="color:red">Always pass a custom comparator (a lambda) when sorting
+numbers. The comparator returns a negative number if `a` should come first, zero
+if equal, positive if `b` should come first.</span>
+
+```javascript
+const nums = [1, 2, 10, 5];
+
+nums.sort((a, b) => a - b);   // ascending
+console.log(nums);            // [1, 2, 5, 10]  ✅
+
+nums.sort((a, b) => b - a);   // descending
+console.log(nums);            // [10, 5, 2, 1]
+```
+
+Yes, the string-by-default behaviour is garbage — but this is how JavaScript
+works, so just build the habit of always passing a comparator.
+
 ## String utility methods
 
 Strings come with a bunch of built-in helpers. Get familiar with them — you'll
@@ -209,6 +241,79 @@ s.trim();          // removes leading/trailing whitespace
 
 Note that `.length` works on strings too (`s.length` is `11`).
 
+## Generators
+
+A generator is a function that can pause and resume, producing a sequence of
+values lazily — much like Python's generators. You declare one with `function*`
+and emit values with `yield`. Calling the generator returns an iterator, and
+each `.next()` runs until the next `yield`.
+
+Here's an infinite Fibonacci generator:
+
+```javascript
+function* fibonacci() {
+    let [a, b] = [0, 1];
+    while (true) {
+        yield a;
+        [a, b] = [b, a + b];
+    }
+}
+
+const gen = fibonacci();
+console.log(gen.next().value);   // 0
+console.log(gen.next().value);   // 1
+console.log(gen.next().value);   // 1
+console.log(gen.next().value);   // 2
+console.log(gen.next().value);   // 3
+```
+
+Because it's lazy, an infinite generator is fine — you just take as many values
+as you need. For example, the first 10 Fibonacci numbers:
+
+```javascript
+function firstN(gen, n) {
+    const out = [];
+    for (const x of gen) {
+        out.push(x);
+        if (out.length === n) break;
+    }
+    return out;
+}
+
+console.log(firstN(fibonacci(), 10));
+// [0, 1, 1, 2, 3, 5, 8, 13, 21, 34]
+```
+
+## Extending built-ins with `.prototype`
+
+In JavaScript you can add new methods to a built-in class (like `Array`) by
+attaching them to its `prototype`. Every array then has access to your method:
+
+```javascript
+Array.prototype.second = function () {
+    return this[1];
+};
+
+const arr = [10, 20, 30];
+console.log(arr.second());   // 20
+```
+
+This is real **monkey-patching** — you're modifying the built-in type itself.
+
+> **Note:** you *cannot* do this directly in Python. Python forbids patching
+> built-in types like `list` (`list.second = ...` raises a `TypeError`). To get
+> similar behaviour there you'd have to **subclass** `list`:
+>
+> ```python
+> class MyList(list):
+>     def second(self):
+>         return self[1]
+> ```
+
+A word of caution: monkey-patching built-ins is powerful but considered risky —
+it affects *every* array in your program and can clash with future language
+features or other libraries. Use it sparingly.
+
 ## Takeaways
 
 - Dynamic typing like Python, C-style syntax like Java.
@@ -216,3 +321,7 @@ Note that `.length` works on strings too (`s.length` is `11`).
 - Use `const` by default, `let` when you must reassign.
 - Learn the array basics and the common string methods — they cover most
   day-to-day work.
+- Always pass a comparator to `sort()` for numbers — the default sorts as
+  strings.
+- Generators (`function*` / `yield`) give you lazy sequences.
+- You can monkey-patch built-ins via `.prototype`, but do it sparingly.
