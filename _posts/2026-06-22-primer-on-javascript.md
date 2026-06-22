@@ -54,8 +54,19 @@ typeof function(){} // "function"
 ```
 
 Two gotchas to note: `typeof null` returns `"object"` (a long-standing bug in
-the language), and arrays also report `"object"` — use `Array.isArray(x)` to
-check for an array specifically.
+the language), and arrays also report `"object"`.
+
+For arrays specifically, use `Array.isArray(obj)`. Your instinct might be to
+reach for `typeof`, but there's a gotcha — both arrays and plain objects report
+`"object"`, so `typeof` can't tell them apart:
+
+```javascript
+typeof []   // "object"
+typeof {}   // "object"
+
+Array.isArray([])   // true
+Array.isArray({})   // false
+```
 
 ## Math utilities
 
