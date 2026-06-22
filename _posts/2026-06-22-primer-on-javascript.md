@@ -40,6 +40,23 @@ A couple of things worth noting:
 - `bigint` is for integers larger than `number` can safely hold — note the `n`
   suffix.
 
+You check a value's type with the `typeof` operator. A few worth remembering:
+
+```javascript
+typeof 42           // "number"
+typeof "hello"      // "string"
+typeof true         // "boolean"
+typeof undefined    // "undefined"
+typeof null         // "object"   <-- historical bug
+typeof {}           // "object"
+typeof []           // "object"
+typeof function(){} // "function"
+```
+
+Two gotchas to note: `typeof null` returns `"object"` (a long-standing bug in
+the language), and arrays also report `"object"` — use `Array.isArray(x)` to
+check for an array specifically.
+
 ## Math utilities
 
 The built-in `Math` object has the usual helpers. `Math.min` and `Math.max`
