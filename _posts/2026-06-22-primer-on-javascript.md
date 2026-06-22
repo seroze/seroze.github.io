@@ -18,6 +18,45 @@ somewhere between the two:
 
 This post collects the handful of things worth knowing up front.
 
+## Primitive types
+
+Unlike some languages, JavaScript doesn't split numbers into `int`, `float`,
+`double`, etc. — there is just one `number` type that covers integers and
+floating-point alike. In total JavaScript has **7 primitive types**:
+
+| Type        | Example              |
+|-------------|----------------------|
+| `number`    | `42`, `3.14`, `NaN`, `Infinity` |
+| `string`    | `"hello"`, `'world'` |
+| `boolean`   | `true`, `false`      |
+| `undefined` | `let x;`             |
+| `null`      | `let x = null;`      |
+| `bigint`    | `123n`               |
+| `symbol`    | `Symbol("id")`       |
+
+A couple of things worth noting:
+
+- `number` includes special values `NaN` (not-a-number) and `Infinity`.
+- `bigint` is for integers larger than `number` can safely hold — note the `n`
+  suffix.
+
+## Math utilities
+
+The built-in `Math` object has the usual helpers. `Math.min` and `Math.max`
+return the smallest/largest of their arguments, and `Infinity` is handy as a
+starting "very large" value (for example when finding a minimum):
+
+```javascript
+Math.min(3, 1, 2);   // 1
+Math.max(3, 1, 2);   // 3
+
+let smallest = Infinity;
+for (const x of [5, 2, 8]) {
+    smallest = Math.min(smallest, x);
+}
+// smallest === 2
+```
+
 ## Always use `===`, never `==`
 
 This is the single most important habit to build. The honest answer is that
