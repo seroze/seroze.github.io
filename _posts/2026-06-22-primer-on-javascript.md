@@ -132,6 +132,30 @@ A few array basics worth learning early: `push()` / `pop()` (add/remove at the
 end), `shift()` / `unshift()` (front), `slice()`, `indexOf()`, and the
 higher-order ones like `map()`, `filter()`, and `forEach()`.
 
+### Checking if an element is in an array
+
+Use `includes()` — it returns a boolean and is the cleanest way to check
+membership:
+
+```javascript
+const arr = [10, 20, 30];
+
+arr.includes(20);   // true
+arr.includes(99);   // false
+```
+
+If you also need the *position* of the element, use `indexOf()`. It returns the
+index, or `-1` if the element isn't present:
+
+```javascript
+arr.indexOf(20);    // 1
+arr.indexOf(99);    // -1
+
+if (arr.indexOf(20) !== -1) {
+    console.log("found it");
+}
+```
+
 ## String utility methods
 
 Strings come with a bunch of built-in helpers. Get familiar with them — you'll
