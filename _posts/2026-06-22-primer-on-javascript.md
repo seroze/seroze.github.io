@@ -241,6 +241,26 @@ s.trim();          // removes leading/trailing whitespace
 
 Note that `.length` works on strings too (`s.length` is `11`).
 
+Strings in JavaScript are **immutable** — you can't change a character in place.
+Assigning to an index simply does nothing:
+
+```javascript
+let s = "hello";
+s[0] = "H";
+console.log(s);   // "hello" — unchanged
+```
+
+If you need to edit a string, convert it to a character array first, mutate the
+array, then join it back:
+
+```javascript
+let s = "hello";
+const chars = s.split("");   // ["h", "e", "l", "l", "o"]
+chars[0] = "H";
+s = chars.join("");          // "Hello"
+console.log(s);              // "Hello"
+```
+
 ## Generators
 
 A generator is a function that can pause and resume, producing a sequence of
