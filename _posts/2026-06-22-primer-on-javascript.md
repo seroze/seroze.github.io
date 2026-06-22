@@ -221,6 +221,27 @@ console.log(nums);            // [10, 5, 2, 1]
 Yes, the string-by-default behaviour is garbage — but this is how JavaScript
 works, so just build the habit of always passing a comparator.
 
+#### Comparator vs key functions (vs Python)
+
+There's a subtle difference here if you're coming from Python. **JavaScript
+follows the Java convention** — `sort()` takes a *comparator* `(a, b)` that
+answers *"which of these two comes first?"*. **Python takes a *key* function**
+that answers *"what value should I sort this element by?"*.
+
+```python
+# Python — key style
+arr.sort(key=lambda obj: obj.x)
+```
+
+```javascript
+// JavaScript — comparator style
+arr.sort((a, b) => a.x - b.x);
+```
+
+A common mistake is to pass a Python-style key to JS: `arr.sort(o => o.x)`. That
+silently breaks, because JS calls it as `fn(a, b)`, not `fn(a)`. To sort by a
+key `fn`, wrap it in a comparator: `arr.sort((a, b) => fn(a) - fn(b))`.
+
 ## String utility methods
 
 Strings come with a bunch of built-in helpers. Get familiar with them — you'll
