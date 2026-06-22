@@ -310,6 +310,17 @@ s = chars.join("");          // "Hello"
 console.log(s);              // "Hello"
 ```
 
+## Sets
+
+A `Set` stores unique values. Use `add()` to insert, `has()` to check
+membership, `delete()` to remove, and `.size` for the count:
+
+```javascript
+const seen = new Set();
+seen.add(1); seen.add(1); seen.add(2);
+console.log(seen.has(1), seen.size);   // true 2
+```
+
 ## Generators
 
 A generator is a function that can pause and resume, producing a sequence of
