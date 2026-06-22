@@ -314,6 +314,57 @@ A word of caution: monkey-patching built-ins is powerful but considered risky �
 it affects *every* array in your program and can clash with future language
 features or other libraries. Use it sparingly.
 
+## `valueOf()` and `toString()` — custom conversion
+
+JavaScript objects can control how they behave when converted to a number or a
+string. This is something I ran into while solving LeetCode.
+
+- **`valueOf()`** is called when JavaScript needs a *numeric* value from an
+  object (for example, with the `+` operator).
+- **`toString()`** is called when it needs a *string* representation (for
+  example, inside `String(...)`).
+
+```javascript
+class Box {
+    constructor(x) {
+        this.x = x;
+    }
+    valueOf()  { return this.x; }
+    toString() { return `Box(${this.x})`; }
+}
+
+const a = new Box(3);
+const b = new Box(7);
+
+console.log(a + b);        // 10   -> a.valueOf() + b.valueOf()
+console.log(String(a));    // "Box(3)" -> a.toString()
+```
+
+The LeetCode **Array Wrapper** problem uses both at once:
+
+```javascript
+var ArrayWrapper = function (nums) {
+    this.nums = nums;
+};
+
+ArrayWrapper.prototype.valueOf = function () {
+    return this.nums.reduce((sum, x) => sum + x, 0);
+};
+
+ArrayWrapper.prototype.toString = function () {
+    return `[${this.nums.join(',')}]`;
+};
+
+const obj1 = new ArrayWrapper([1, 2]);
+const obj2 = new ArrayWrapper([3, 4]);
+
+obj1 + obj2;     // 10        -> obj1.valueOf() + obj2.valueOf()
+String(obj1);    // "[1,2]"   -> obj1.toString()
+```
+
+This lets operators like `+` and functions like `String()` work naturally with
+your own classes — a feature without a direct equivalent in Python, Java, or Go.
+
 ## Takeaways
 
 - Dynamic typing like Python, C-style syntax like Java.
@@ -325,3 +376,5 @@ features or other libraries. Use it sparingly.
   strings.
 - Generators (`function*` / `yield`) give you lazy sequences.
 - You can monkey-patch built-ins via `.prototype`, but do it sparingly.
+- Custom classes can hook into `+` and `String()` via `valueOf()` and
+  `toString()`.
