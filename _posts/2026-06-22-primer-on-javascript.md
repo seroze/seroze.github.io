@@ -418,6 +418,51 @@ const [first, ...others] = [10, 20, 30];
 **Rule of thumb:** `...` in a *call or literal* spreads (unpacks); `...` in a
 *parameter list or destructuring target* collects (rest).
 
+## Closures
+
+A **closure** is a function that "remembers" the variables from the scope where
+it was created, even after that outer function has finished running. The inner
+variable stays alive as long as the returned function holds a reference to it.
+
+```javascript
+function create() {
+    let value = 5;
+
+    return () => {
+        value *= 2;
+        console.log(value);
+    };
+}
+
+const fn = create();
+
+fn();   // 10
+fn();   // 20
+fn();   // 40
+```
+
+Even though `create()` has already returned, its `value` isn't garbage-collected
+— the returned arrow function keeps it alive and mutates it across calls. This is
+the basis for things like counters, memoization, and private state.
+
+**Analogy in Python:** the exact same thing works, but reassigning the captured
+variable needs the `nonlocal` keyword:
+
+```python
+def create():
+    value = 5
+    def fn():
+        nonlocal value
+        value *= 2
+        print(value)
+    return fn
+```
+
+**Analogy in Java:** Java has closures via lambdas/anonymous classes, but the
+captured local variable must be *effectively final* — you cannot reassign it.
+To get mutable state like above you'd capture a field or a one-element array
+(`int[] value = {5};`).
+
 ## Generators
 
 A generator is a function that can pause and resume, producing a sequence of
