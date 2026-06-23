@@ -310,6 +310,10 @@ s = chars.join("");          // "Hello"
 console.log(s);              // "Hello"
 ```
 
+The key trick is `const chars = s.split("")` — since strings are immutable, this
+is the standard way to get a mutable char array you can index into and edit. It
+comes up constantly in string problems, so keep it handy.
+
 ## Sets
 
 A `Set` stores unique values. Use `add()` to insert, `has()` to check
