@@ -558,6 +558,48 @@ const id = setInterval(() => {
 clearInterval(id);
 ```
 
+## The event loop: microtasks vs macrotasks
+
+JavaScript is single-threaded, and async callbacks are scheduled onto two
+different queues:
+
+- **Microtask queue** — Promise callbacks (`.then`, `await`), `queueMicrotask`.
+- **Macrotask queue** — `setTimeout`, `setInterval`, I/O events.
+
+The event loop's rule is simple but easy to get wrong:
+
+1. Run **all** microtasks (draining the queue completely).
+2. Run **one** macrotask.
+3. Repeat.
+
+Crucially, the entire microtask queue is emptied before the *next* macrotask
+runs — so a `setTimeout(fn, 0)` still waits behind every pending Promise
+callback. Consider:
+
+```javascript
+console.log(1);
+
+setTimeout(() => {
+    console.log(2);
+}, 0);
+
+Promise.resolve()
+    .then(() => { console.log(3); })
+    .then(() => { console.log(4); });
+
+console.log(5);
+```
+
+This prints **`1, 5, 3, 4, 2`**:
+
+- `1` and `5` are synchronous — they run first, top to bottom.
+- `3` and `4` are microtasks (Promise callbacks) — they drain next, in order.
+- `2` is a macrotask (`setTimeout`) — even with a `0`ms delay, it runs *last*,
+  after the microtask queue is empty.
+
+(Python's `asyncio` has a comparable distinction between ready callbacks and
+scheduled-later ones, though the exact ordering rules differ.)
+
 ## `valueOf()` and `toString()` — custom conversion
 
 JavaScript objects can control how they behave when converted to a number or a
