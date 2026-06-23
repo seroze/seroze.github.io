@@ -331,6 +331,52 @@ seen.add(1); seen.add(1); seen.add(2);
 console.log(seen.has(1), seen.size);   // true 2
 ```
 
+## The `...` spread / rest operator
+
+`...` is one of the most useful pieces of modern JS syntax. It does two
+opposite-looking things depending on where it appears. (It's roughly analogous
+to Python's `*args` / `*list` unpacking.)
+
+### Spread — "unpack" into individual items
+
+It expands an array (or any iterable) into its individual elements. This is
+exactly what `fn(...args)` does in the `cancellable` example above:
+
+```javascript
+fn(...args);   // if args = [2, 3], this calls fn(2, 3)
+```
+
+Other common uses:
+
+```javascript
+const a = [1, 2, 3];
+const b = [...a, 4, 5];        // [1, 2, 3, 4, 5]  — copy + extend
+Math.max(...a);                // 3                — array -> arguments
+
+const o1 = { x: 1 };
+const o2 = { ...o1, y: 2 };    // { x: 1, y: 2 }   — works on objects too
+```
+
+It's also the idiomatic way to make a **shallow copy**: `const copy = [...arr]`.
+
+### Rest — "collect" the leftovers into one array
+
+In a function's parameter list (or in destructuring), `...` does the reverse —
+it gathers multiple values into a single array:
+
+```javascript
+function sum(...nums) {         // nums is a real array
+    return nums.reduce((acc, x) => acc + x, 0);
+}
+sum(1, 2, 3);                   // 6
+
+const [first, ...others] = [10, 20, 30];
+// first = 10, others = [20, 30]
+```
+
+**Rule of thumb:** `...` in a *call or literal* spreads (unpacks); `...` in a
+*parameter list or destructuring target* collects (rest).
+
 ## Generators
 
 A generator is a function that can pause and resume, producing a sequence of
@@ -535,3 +581,4 @@ your own classes — a feature without a direct equivalent in Python, Java, or G
 - You can monkey-patch built-ins via `.prototype`, but do it sparingly.
 - Custom classes can hook into `+` and `String()` via `valueOf()` and
   `toString()`.
+- `...` spreads in calls/literals and collects (rest) in parameter lists.
