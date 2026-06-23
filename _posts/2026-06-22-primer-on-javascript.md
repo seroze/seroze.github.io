@@ -404,6 +404,43 @@ A word of caution: monkey-patching built-ins is powerful but considered risky �
 it affects *every* array in your program and can clash with future language
 features or other libraries. Use it sparingly.
 
+## `setTimeout` and `clearTimeout`
+
+`setTimeout(fn, t)` schedules `fn` to run once after `t` milliseconds. It
+returns a **timer id** that you can pass to `clearTimeout(id)` to cancel the
+call *before* it fires.
+
+A classic LeetCode problem (*Cancellable Function*) makes this concrete: schedule
+a function, but hand back a `cancel()` that stops it if called in time.
+
+```javascript
+var cancellable = function (fn, args, t) {
+    const timerId = setTimeout(() => { fn(...args); }, t);
+
+    // calling this before `t` ms have passed cancels the scheduled fn
+    return function () {
+        clearTimeout(timerId);
+    };
+};
+```
+
+How it plays out: if the returned `cancel()` runs before `t`, `clearTimeout`
+removes the pending call and `fn` never executes. If `t` elapses first, `fn`
+runs and the later `clearTimeout` is a harmless no-op.
+
+```javascript
+const fn = (x) => x * 5;
+const args = [2], t = 20, cancelTimeMs = 50;
+
+const cancel = cancellable(fn, args, t);   // fn fires at t = 20ms
+setTimeout(cancel, cancelTimeMs);          // cancel at 50ms — too late, fn already ran
+// fn(2) returns 10
+```
+
+Here `cancelTimeMs` (50) is greater than `t` (20), so `fn` fires first and the
+cancel does nothing. If `cancelTimeMs` were less than `t`, the call would be
+cancelled and `fn` would never run.
+
 ## `valueOf()` and `toString()` — custom conversion
 
 JavaScript objects can control how they behave when converted to a number or a
