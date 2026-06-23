@@ -314,6 +314,12 @@ The key trick is `const chars = s.split("")` — since strings are immutable, th
 is the standard way to get a mutable char array you can index into and edit. It
 comes up constantly in string problems, so keep it handy.
 
+And to go back the other way, join the array into a string:
+
+```javascript
+return chars.join("");   // convert char array back to a String
+```
+
 ## Sets
 
 A `Set` stores unique values. Use `add()` to insert, `has()` to check
