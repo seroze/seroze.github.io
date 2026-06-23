@@ -441,6 +441,19 @@ Here `cancelTimeMs` (50) is greater than `t` (20), so `fn` fires first and the
 cancel does nothing. If `cancelTimeMs` were less than `t`, the call would be
 cancelled and `fn` would never run.
 
+If the calling and execution flow is still confusing, here's another way to
+frame it:
+
+- You're supposed to execute `fn` after a delay of `t`, and *also* return a
+  `cancel` function.
+- If `cancel` is called, it should stop the pending timeout for `fn`.
+- So if `cancel` is called *after* `fn` has already executed, nothing happens.
+  But if it's called *before*, we clear the timeout so `fn` never runs at all.
+
+The implementation recipe is simple: put a `setTimeout` (which will resolve into
+executing `fn`) just before returning the `cancel` function, and put a
+`clearTimeout` inside `cancel`.
+
 ## `valueOf()` and `toString()` — custom conversion
 
 JavaScript objects can control how they behave when converted to a number or a
