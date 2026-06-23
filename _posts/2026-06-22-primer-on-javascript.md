@@ -133,6 +133,28 @@ let count = 0;           // can be reassigned
 count = count + 1;
 ```
 
+<span style="color:red">Watch out: if you assign to a variable *without*
+declaring it with `let`/`const`/`var`, JavaScript silently creates a **global
+variable** instead of erroring. This is a historical quirk and a real source of
+bugs.</span>
+
+I got bitten by this in a binary search — I used `lo` and `hi` without declaring
+them, so they leaked into the global scope and the code did all sorts of garbage:
+
+```javascript
+function search(arr, target) {
+    lo = 0;              // ❌ no let/const — becomes a global!
+    hi = arr.length - 1;
+    while (lo <= hi) {
+        // ...
+    }
+}
+```
+
+The fix is just to declare them: `let lo = 0, hi = arr.length - 1;`. (Running in
+*strict mode* — `"use strict";` — turns this silent footgun into an actual
+error, which is why modules and classes enable it by default.)
+
 ## For loops
 
 The classic C-style loop is exactly what you'd expect:
