@@ -454,6 +454,23 @@ The implementation recipe is simple: put a `setTimeout` (which will resolve into
 executing `fn`) just before returning the `cancel` function, and put a
 `clearTimeout` inside `cancel`.
 
+### `setInterval` and `clearInterval`
+
+Where `setTimeout` fires once, `setInterval(fn, t)` calls `fn` **repeatedly**
+every `t` milliseconds. It also returns a timer id, which you cancel with
+`clearInterval(id)` to stop the repeats:
+
+```javascript
+let count = 0;
+const id = setInterval(() => {
+    count++;
+    console.log(count);
+}, 1000);          // logs 1, 2, 3, ... every second
+
+// later, to stop it:
+clearInterval(id);
+```
+
 ## `valueOf()` and `toString()` — custom conversion
 
 JavaScript objects can control how they behave when converted to a number or a
