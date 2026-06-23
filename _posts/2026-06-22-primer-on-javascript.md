@@ -359,6 +359,25 @@ const o2 = { ...o1, y: 2 };    // { x: 1, y: 2 }   — works on objects too
 
 It's also the idiomatic way to make a **shallow copy**: `const copy = [...arr]`.
 
+Note that spread is only a *shallow* copy — nested objects/arrays are still
+shared by reference. For a true **deep copy**, use the built-in
+`structuredClone()`:
+
+```javascript
+const original = { a: 1, nested: { b: 2 } };
+
+const shallow = { ...original };
+shallow.nested.b = 99;
+console.log(original.nested.b);   // 99  — nested object was shared ❌
+
+const deep = structuredClone(original);
+deep.nested.b = 42;
+console.log(original.nested.b);   // 99  — original untouched ✅
+```
+
+This is the JS equivalent of Python's `copy.deepcopy()` (versus the shallow
+`copy.copy()`).
+
 ### Rest — "collect" the leftovers into one array
 
 In a function's parameter list (or in destructuring), `...` does the reverse —
