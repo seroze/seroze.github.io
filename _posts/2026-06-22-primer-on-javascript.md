@@ -463,6 +463,97 @@ captured local variable must be *effectively final* — you cannot reassign it.
 To get mutable state like above you'd capture a field or a one-element array
 (`int[] value = {5};`).
 
+## Arrow functions and `this`
+
+Arrow functions aren't just shorter syntax for `function` — they differ in one
+crucial way: **an arrow function does not have its own `this`.** It captures
+`this` lexically, from the scope where it was *defined*. A regular `function`,
+by contrast, gets its `this` rebound depending on *how it's called*.
+
+This wrinkle is the source of a classic pre-ES6 workaround. Look at this code:
+
+```javascript
+const person = {
+    name: "Alice",
+
+    greet() {
+        const self = this;
+
+        function fn() {
+            console.log(self.name);
+        }
+
+        fn();
+    }
+};
+
+person.greet();   // "Alice"
+```
+
+**Why the `self = this` maneuver?** Inside `greet()`, `this` correctly refers to
+`person` (because it was called as `person.greet()`). But `fn` is a plain
+*function*, not a method — so when it's invoked as a bare `fn()`, JavaScript
+rebinds its `this` to `undefined` (in strict mode) or the global object (in
+sloppy mode). It is **not** `person`. So `this.name` inside `fn` would blow up or
+print `undefined`.
+
+The old fix: capture the *outer* `this` into an ordinary variable (`self`, often
+called `that` or `_this`) while you still have the right value, then close over
+that variable from the inner function. Closures behave predictably; `this`
+doesn't. So you sidestep `this` entirely.
+
+**Arrow functions make this trick obsolete.** Because an arrow function inherits
+`this` from its surrounding scope, you can drop `self` completely:
+
+```javascript
+const person = {
+    name: "Alice",
+
+    greet() {
+        const fn = () => {
+            console.log(this.name);   // `this` is still `person`
+        };
+
+        fn();
+    }
+};
+
+person.greet();   // "Alice"
+```
+
+The arrow function doesn't get its own `this`, so `this` inside it is the same
+`this` as in `greet` — which is `person`. No `self`, no `bind`, no surprises.
+This is exactly why you'll see arrows used for callbacks (`setTimeout`,
+`.map`, event handlers, promises) — they keep `this` pointing at whatever the
+enclosing method's `this` was.
+
+> One consequence of the same rule: never use an arrow function *as* a method
+> when you need `this` to be the object. `greet: () => this.name` would capture
+> `this` from the module/global scope, not `person`. Use the `greet() { ... }`
+> shorthand (or a regular `function`) for methods, and arrows for the callbacks
+> inside them.
+
+**Analogy in Python:** Python never had this footgun because methods take an
+explicit `self` parameter — the binding is in the signature, not in how you call
+the function. A nested function in Python simply closes over `self` like any
+other variable:
+
+```python
+class Person:
+    def __init__(self):
+        self.name = "Alice"
+
+    def greet(self):
+        def fn():
+            print(self.name)   # plain closure over `self`
+        fn()
+```
+
+The JavaScript `const self = this` line is essentially a manual re-creation of
+what Python gives you for free. This connects to [[blog-python-analogies]] —
+JS's `this` is the implicit, call-site-dependent version of Python's explicit
+`self`.
+
 ## Generators
 
 A generator is a function that can pause and resume, producing a sequence of
@@ -505,6 +596,77 @@ function firstN(gen, n) {
 console.log(firstN(fibonacci(), 10));
 // [0, 1, 1, 2, 3, 5, 8, 13, 21, 34]
 ```
+
+## Objects
+
+In JavaScript you **don't need an explicit class declaration to make an object.**
+An object is just a bag of key-value pairs — essentially a hashmap with string
+(or symbol) keys. You write one with braces, and you can read, add, or delete
+keys at will:
+
+```javascript
+const user = {
+    name: "Alice",
+    age: 30,
+};
+
+console.log(user.name);     // "Alice"  — dot access
+console.log(user["age"]);   // 30        — bracket access, like a hashmap
+user.email = "a@x.com";     // add a key on the fly
+delete user.age;            // remove one
+```
+
+This is the same mental model as a Python `dict` — except the `.key` dot syntax
+is first-class, and the keys are unordered string properties rather than
+arbitrary hashable objects.
+
+**Functions are special objects.** A function in JS *is* an object that happens
+to be callable — which means you can hang arbitrary properties off it, exactly
+like any other object:
+
+```javascript
+function hello() {
+    console.log("hello");
+}
+
+console.log(typeof hello);   // "function"
+
+hello.myProperty = 42;
+console.log(hello.myProperty);   // 42
+```
+
+That last bit is perfectly valid JavaScript. The function still runs as a
+function, but it also carries the `myProperty` field. This is why things like
+memoization caches or static-style counters are sometimes stashed directly on
+the function object.
+
+**Where do `prototype` and `class` fit?** Because objects are just hashmaps,
+JavaScript originally had no real classes — shared behaviour was wired up through
+the **prototype** chain. You can think of a prototype as roughly the equivalent
+of an **interface (or shared base) in Java**: it's the object that supplies the
+methods every instance inherits. Modern JavaScript adds the `class` keyword,
+which gives you familiar class syntax — but under the hood it's still just
+prototypes and objects:
+
+```javascript
+class Animal {
+    constructor(name) {
+        this.name = name;
+    }
+    speak() {
+        console.log(`${this.name} makes a sound`);
+    }
+}
+
+const a = new Animal("Rex");
+a.speak();   // "Rex makes a sound"
+```
+
+**Analogy in Python:** a plain JS object maps cleanly onto a Python `dict`, and
+the `class` keyword onto a Python `class`. The difference is that Python keeps
+"dict" and "class instance" as distinct concepts, whereas in JavaScript a class
+instance *is* still an object/hashmap underneath — the line between data and
+type is much blurrier.
 
 ## Extending built-ins with `.prototype`
 
