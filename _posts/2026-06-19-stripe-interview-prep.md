@@ -882,3 +882,4 @@ Given a list of sales records with varying input constraints (date range, region
 - [Stripe engineering blog](https://stripe.com/blog/engineering)
 - LeetCode — filter by company tag: Stripe
 - [RoundZ — Stripe interview experiences](https://roundz.ai/company/stripe?tab=interviews)
+- [1point3acres](https://www.1point3acres.com/) — interview experiences and discussions, though the subscription is too costly
