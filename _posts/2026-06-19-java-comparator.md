@@ -65,6 +65,70 @@ Avoid `a - b` subtraction — it overflows when values are large or negative. Al
 
 ---
 
+## The theory: why does `PriorityQueue` accept a comparator?
+
+It's worth pausing on *why* you can pass `Comparator.comparingInt(Student::getAge)` into a `PriorityQueue` constructor and have it "just work." There's no magic here — it's a deliberate design contract.
+
+### A comparator is just a strategy object
+
+`Comparator<T>` is a **functional interface** — an interface with exactly one abstract method:
+
+```java
+@FunctionalInterface
+public interface Comparator<T> {
+    int compare(T a, T b);
+}
+```
+
+That single method *is* the entire contract. Anything that, given two `T`s, returns an `int` with the right sign convention **is** a comparator. So `Comparator.comparingInt(Student::getAge)` isn't special syntax — it's a factory that builds an ordinary object equivalent to:
+
+```java
+new Comparator<Student>() {
+    public int compare(Student a, Student b) {
+        return Integer.compare(a.getAge(), b.getAge());
+    }
+};
+```
+
+It's an object you can store in a variable, pass around, and hand to anyone who asks for one.
+
+### The sign convention is the agreed-upon construct
+
+`PriorityQueue` knows nothing about `Student`, age, or your domain. It only knows the contract: *"if I call `compare(x, y)` and get a negative number, `x` is smaller and should come out first."* The comparator is the only thing that understands your data. That separation is the whole point.
+
+There's a deeper mathematical requirement too: a comparator must define a **total order** — it has to be consistent (`compare(a,b)` and `compare(b,a)` have opposite signs) and transitive (if `a < b` and `b < c`, then `a < c`). Violate this — the classic `a - b` overflow bug, or a comparator returning inconsistent results — and the heap or sort can throw `IllegalArgumentException: Comparator violates its general contract`, because the algorithm *relies* on those guarantees to place elements.
+
+### Why the constructor accepts it — the Strategy pattern
+
+A heap needs *some* notion of "smallest" to know what `poll()` returns. It can get that two ways:
+
+**Natural ordering** — if `Student implements Comparable<Student>`, the class defines its own `compareTo`, and the heap calls that. One ordering, baked into the type.
+
+**Supplied ordering** — you inject the strategy through the constructor. This is the **Strategy design pattern**: the algorithm (heap maintenance) is fixed, but the *policy* (how to order) is a plug-in you provide. The constructor stores your comparator in a field and calls `comparator.compare(...)` every time it sifts an element up or down. No reflection, no annotations — just "hold a reference and call the method."
+
+Supplied ordering matters because a type can have only **one** natural ordering, but you can have unlimited comparators — by age here, by GPA there — and because you may not even own the class you're sorting.
+
+### The Python analogy
+
+This clicks instantly if you've used Python's `sorted`:
+
+```python
+sorted(students, key=lambda s: s.age)
+```
+
+Python's `key` is the same plug-in strategy — you hand `sorted` a callable that derives the ordering, and `sorted` stays ignorant of your domain. `Comparator.comparingInt(Student::getAge)` is Java's equivalent of `key=lambda s: s.age`.
+
+| Concept | Java | Python |
+|---|---|---|
+| Inject an ordering strategy | `Comparator` passed to constructor/`sort` | `key=` passed to `sorted`/`heapq` |
+| Key-extractor form | `comparingInt(Student::getAge)` | `key=lambda s: s.age` |
+| Raw two-arg form | `compare(a, b)` | `functools.cmp_to_key` |
+| Natural ordering on the type | `implements Comparable` | `__lt__` / `__eq__` |
+
+**Bottom line:** `PriorityQueue` accepts a comparator because it's built around the Strategy pattern — it owns the *how-to-heap* logic and delegates the *how-to-order* decision to an interchangeable object you supply. The `int compare(a, b)` sign convention is the contract that lets a generic, domain-blind data structure cooperate with your domain-specific ordering.
+
+---
+
 ## Comparator factory methods
 
 Since Java 8, `Comparator` has static factory methods that let you build comparators without writing the comparison logic manually.

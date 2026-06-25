@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "Java Interview Cheatsheet"
+title: "Java Quick Review"
 date: 2026-06-17 00:00:00 +0530
 categories: java
 tags: [java, interview, data-structures]
@@ -70,6 +70,8 @@ PriorityQueue<String> byLength = new PriorityQueue<>((a, b) -> a.length() - b.le
 ---
 
 ## Comparator — how to tune ordering
+
+> For a deeper dive, see the dedicated post: [Java Comparator]({% post_url 2026-06-19-java-comparator %}).
 
 A comparator must return:
 - **negative** → `a` comes before `b`
@@ -361,6 +363,37 @@ SortedMap<Integer, String> window = calendar.subMap(1000, true, 1400, true);
 
 ---
 
+## EnumMap
+
+`EnumMap` is a specialized `Map` whose keys **must** belong to a single enum type. When all your keys come from an enum, prefer it over `HashMap` — it's faster and uses less memory.
+
+```java
+enum Day { MON, TUE, WED, THU, FRI, SAT, SUN }
+
+EnumMap<Day, String> plan = new EnumMap<>(Day.class); // pass the enum's Class
+
+plan.put(Day.MON, "gym");
+plan.put(Day.WED, "swim");
+plan.put(Day.FRI, "rest");
+
+plan.get(Day.MON);          // "gym"
+plan.getOrDefault(Day.TUE, "free"); // "free"
+plan.containsKey(Day.WED);  // true
+```
+
+**Why it's efficient:** internally an `EnumMap` is just an array indexed by each enum constant's `ordinal()` (its position in the declaration). There's no hashing, no buckets, and no collisions — a `get`/`put` is a direct array access. It also keeps keys in **enum declaration order** when iterated, which `HashMap` does not.
+
+```java
+// Iterates in MON, WED, FRI order — the order the constants are declared
+for (Map.Entry<Day, String> e : plan.entrySet()) {
+    System.out.println(e.getKey() + " -> " + e.getValue());
+}
+```
+
+The one constraint: you must pass the enum's `Class` object to the constructor (`new EnumMap<>(Day.class)`), since the map needs to know the universe of possible keys up front. Keys cannot be `null`.
+
+---
+
 ## ArrayList
 
 `ArrayList` is a resizable array. Use it when you need indexed access and don't care about fast insertions at the front.
@@ -600,3 +633,125 @@ s.getCourses().size();      // still 2 — object is unaffected
 ```
 
 If you returned `courses` directly, the caller could mutate the internal list and break immutability even without a setter.
+
+---
+
+### The `record` keyword — and why it's beneficial
+
+A `record` (since Java 16) is a compact way to declare an immutable, data-carrying class. You write the components once, and the compiler generates the boilerplate for you.
+
+```java
+public record Point(int x, int y) {}
+```
+
+That single line gives you, for free:
+
+- A `private final` field for each component (`x`, `y`)
+- A canonical constructor `Point(int x, int y)`
+- An accessor for each component — `x()` and `y()` (note: no `get` prefix)
+- `equals()` and `hashCode()` based on **all** components
+- A readable `toString()` — `Point[x=1, y=2]`
+
+Compare this to the hand-written equivalent from the immutability section above — a record collapses ~40 lines of fields, constructor, getters, `equals`, and `hashCode` into one line.
+
+**Why it's beneficial:**
+
+1. **Eliminates boilerplate.** No more manually writing and maintaining `equals`/`hashCode`/`toString` that drift out of sync when you add a field.
+2. **Immutable by default.** All fields are `final` and there are no setters, so records are inherently thread-safe and safe to use as `HashMap`/`HashSet` keys — the generated `equals`/`hashCode` honor the contract automatically (see the [hashCode section](#strings) above).
+3. **Correct `equals`/`hashCode` for free.** The compiler includes every component, so two records with equal contents are always equal — exactly the behavior you want for value objects and DTOs.
+4. **Intent is explicit.** `record` signals "this is just data," making code easier to read than a class full of generated-looking methods.
+
+You can still add validation or custom logic via a **compact constructor**:
+
+```java
+public record Point(int x, int y) {
+    public Point {                       // compact canonical constructor
+        if (x < 0 || y < 0) {
+            throw new IllegalArgumentException("coordinates must be non-negative");
+        }
+    }
+}
+```
+
+```java
+Point a = new Point(1, 2);
+Point b = new Point(1, 2);
+
+a.equals(b);   // true  — value equality, generated automatically
+a.x();         // 1     — accessor, no "get" prefix
+a.toString();  // Point[x=1, y=2]
+
+Set<Point> seen = new HashSet<>();
+seen.add(new Point(1, 2));
+seen.contains(new Point(1, 2)); // true — works out of the box
+```
+
+**Limitations to know:** a record can't extend another class (it implicitly extends `java.lang.Record`), and its components are always final — so it's the right tool for immutable value carriers, not for mutable entities.
+
+---
+
+### Optional — handling "maybe absent" values
+
+`Optional<T>` (since Java 8) is a container that holds either a value or nothing. It exists to make the absence of a value explicit in the type signature, so callers are forced to deal with it instead of being surprised by a `NullPointerException`.
+
+```java
+Optional<String> present = Optional.of("hello");   // value must be non-null
+Optional<String> empty   = Optional.empty();        // no value
+Optional<String> maybe   = Optional.ofNullable(x);  // empty if x is null, else holds x
+```
+
+Use `Optional` as a **return type** for methods that might not have an answer — not for fields or method parameters.
+
+```java
+public Optional<User> findByEmail(String email) {
+    // returns Optional.empty() instead of null when not found
+}
+```
+
+**Commonly used APIs:**
+
+```java
+Optional<User> result = findByEmail("a@b.com");
+
+// 1. Check presence
+result.isPresent();   // true if a value is held
+result.isEmpty();     // true if empty (Java 11+)
+
+// 2. Provide a fallback
+result.orElse(defaultUser);            // returns the value, or defaultUser if empty
+result.orElseGet(() -> buildUser());   // lazy — supplier only runs when empty
+result.orElseThrow();                  // throws NoSuchElementException if empty (Java 10+)
+result.orElseThrow(() -> new UserNotFoundException()); // custom exception
+
+// 3. Run code only when present
+result.ifPresent(user -> System.out.println(user.name));
+result.ifPresentOrElse(                // Java 9+
+    user -> System.out.println(user.name),
+    ()   -> System.out.println("not found")
+);
+
+// 4. Transform / chain without unwrapping
+result.map(user -> user.email);        // Optional<String> — empty stays empty
+result.filter(user -> user.isActive()); // empties out if predicate fails
+result.flatMap(user -> user.getManager()); // when the mapper itself returns an Optional
+```
+
+**`map` vs `flatMap`:** use `map` when your function returns a plain value (`User -> String`); use `flatMap` when your function already returns an `Optional` (`User -> Optional<Manager>`) — otherwise you'd get a nested `Optional<Optional<Manager>>`.
+
+**`orElse` vs `orElseGet`:** `orElse(buildUser())` **always** evaluates `buildUser()`, even when the value is present. `orElseGet(() -> buildUser())` only calls it when empty — prefer `orElseGet` when the fallback is expensive.
+
+A typical fluent chain ties it together:
+
+```java
+String managerEmail = findByEmail("a@b.com")
+    .filter(User::isActive)
+    .flatMap(User::getManager)
+    .map(User::getEmail)
+    .orElse("no-manager@company.com");
+```
+
+**Anti-patterns to avoid:**
+
+- Don't call `.get()` without checking presence first — it throws on empty. Prefer `orElse`, `orElseThrow`, or `ifPresent`.
+- Don't use `Optional` for fields or collection elements — it adds overhead and was never designed for that. Use it for return values.
+- Don't wrap a collection in `Optional` — return an empty list/map instead.
