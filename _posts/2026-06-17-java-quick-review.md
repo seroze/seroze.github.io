@@ -755,3 +755,93 @@ String managerEmail = findByEmail("a@b.com")
 - Don't call `.get()` without checking presence first — it throws on empty. Prefer `orElse`, `orElseThrow`, or `ifPresent`.
 - Don't use `Optional` for fields or collection elements — it adds overhead and was never designed for that. Use it for return values.
 - Don't wrap a collection in `Optional` — return an empty list/map instead.
+
+---
+
+### Composition vs Inheritance
+
+This is one of my favorite interview questions.
+
+Suppose you're building a payment system.
+
+**Inheritance:**
+
+```java
+class PaymentProcessor {}
+
+class StripeProcessor extends PaymentProcessor {}
+
+class RazorpayProcessor extends PaymentProcessor {}
+```
+
+Fine. But now you want:
+
+- logging
+- retries
+- metrics
+- authentication
+- rate limiting
+
+Inheritance quickly becomes:
+
+```java
+LoggingStripeProcessor
+RetryStripeProcessor
+RetryLoggingStripeProcessor
+AuthenticatedRetryLoggingStripeProcessor
+```
+
+It explodes combinatorially — every new behavior multiplies the number of subclasses you'd need to cover all combinations.
+
+**Composition:**
+
+```java
+class PaymentProcessor {
+    private Logger logger;
+    private RetryPolicy retry;
+    private Metrics metrics;
+}
+```
+
+Each behavior is independent:
+
+- Need retries? Swap `RetryPolicy`.
+- Need a different logger? Swap `Logger`.
+- Need exponential backoff? Inject another implementation.
+
+Much cleaner.
+
+**Interview answer**
+
+Use **inheritance** when there is a genuine *is-a* relationship and subclasses should be substitutable for the base class (the idea behind the Liskov substitution principle).
+
+Use **composition** when you want to assemble behavior from interchangeable parts, or when behaviors may change independently.
+
+**Composition and unit testing**
+
+This is one of the biggest practical advantages.
+
+```java
+class OrderService {
+    private PaymentGateway gateway;
+}
+```
+
+Unit test:
+
+```java
+PaymentGateway gateway = mock(PaymentGateway.class);
+OrderService service = new OrderService(gateway);
+```
+
+Easy.
+
+With inheritance:
+
+```java
+class OrderService extends StripeGateway { }
+```
+
+How do you replace `StripeGateway`? You usually can't without awkward subclassing or specialized mocking tools.
+
+Composition naturally supports **dependency injection**, making code easier to isolate in tests.
