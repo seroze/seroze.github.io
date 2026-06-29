@@ -208,6 +208,69 @@ source .venv/bin/activate
 
 `uv` manages the venv for you automatically — you rarely need to activate it manually.
 
+### VSCode + Jupyter notebooks: kernels and venvs
+
+When you open a Jupyter notebook in VSCode, it asks you to "select a kernel." This is slightly confusing because two separate things are involved.
+
+**What a kernel actually is**
+
+A Jupyter kernel is a background process that receives code from the notebook, executes it, and sends results back. It is described by a `kernel.json` spec file, something like:
+
+```json
+{
+  "argv": ["/home/user/projects/ml/.venv/bin/python3.12", "-m", "ipykernel_launcher", "-f", "{connection_file}"],
+  "display_name": "Python 3.12 (.venv)",
+  "language": "python"
+}
+```
+
+The `argv` field is the key — it points to a Python executable. That executable determines which packages the kernel can see.
+
+**So are they the same thing?**
+
+No — the kernel and the venv are different, but tightly linked:
+
+- The **venv** is the Python environment — the interpreter plus all installed packages under `.venv/`.
+- The **kernel** is a running process that uses one specific Python executable.
+- When you point a kernel at `.venv/bin/python3.12`, the kernel process runs *inside* that venv — it can import any package installed there.
+
+The venv doesn't know it's being used by a kernel. The kernel just happens to use the venv's Python.
+
+**How to connect a notebook to your venv in VSCode**
+
+Click "Select Kernel" → "Python Environments" → and either pick the venv VSCode detected automatically, or choose "Enter interpreter path" and paste the full path:
+
+```
+~/projects/ml/kaggle/stellar-class/.venv/bin/python3.12
+```
+
+Use the full path because `~` expansion can be unreliable in some VSCode picker inputs — use the absolute path if the tilde form doesn't work:
+
+```
+/home/youruser/projects/ml/kaggle/stellar-class/.venv/bin/python3.12
+```
+
+VSCode then launches a kernel process using that Python, giving the notebook access to everything installed in that venv.
+
+<div style="background: #e8f1fb; border-left: 4px solid #4a90d9; padding: 1rem 1.2rem; margin: 1rem 0; border-radius: 0 4px 4px 0;" markdown="1">
+
+**Good to know: register the venv as a named kernel**
+
+Instead of pasting paths every time, register your venv as a proper kernel once:
+
+```bash
+# activate the venv first, or use its Python directly
+.venv/bin/python -m ipykernel install --user --name stellar-class --display-name "Python (stellar-class)"
+```
+
+After this, "Python (stellar-class)" appears in the kernel picker automatically — no path needed. The kernel spec is stored at `~/.local/share/jupyter/kernels/stellar-class/kernel.json`.
+
+</div>
+
+**Why VSCode sometimes doesn't auto-detect your venv**
+
+VSCode scans a few standard locations for venvs (the workspace root, `~/.virtualenvs`, etc.). If your venv lives somewhere else, it won't appear in the list. Pasting the full path or registering via `ipykernel install` are both reliable workarounds.
+
 ---
 
 ## Managing dependencies with `uv`
