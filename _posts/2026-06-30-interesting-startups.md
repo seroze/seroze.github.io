@@ -18,6 +18,12 @@ published: true
 
 ---
 
+## [General Intuition](https://www.generalintuition.com/)
+
+General Intuition is a frontier AI lab building models that can perceive, predict, and act in virtual and physical environments — moving AI beyond language toward genuine spatial and temporal reasoning. Their models train on billions of action-labeled gameplay clips sourced from Medal, the gaming platform they spun out of, giving the AI a rich diet of intent, action, and consequence across countless 3D environments. The long-term bet: world models general enough to transfer from games into robotics, drones, and autonomous systems.
+
+---
+
 ## [Standard Intelligence](https://si.inc/)
 
 Standard Intelligence is building general-purpose AI models focused on autonomous action and perception — systems that explore and learn like humans do. Their work spans computer vision capable of navigating websites and physical environments, as well as conversational AI for natural speech. They're targeting enterprises and developers who need AI that can handle complex, multi-step tasks rather than narrow single-purpose models.
