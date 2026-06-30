@@ -280,28 +280,137 @@ This updates `gradle-wrapper.properties`, which you commit to version control. E
 
 ## Multi-project builds
 
-Large projects split into subprojects (modules). The root `settings.gradle.kts` declares them:
+Large projects split into subprojects (modules). Here's the full workflow for setting one up from scratch.
 
-```kotlin
-rootProject.name = "my-app"
-include("core", "api", "web")
+### Step 1: `gradle init` — pick Basic (option 4)
+
+When creating a multi-module project, run `gradle init` and choose **option 4 (Basic)**:
+
+```
+Select type of project to generate:
+  1: Application
+  2: Library
+  3: Gradle plugin
+  4: Basic (build structure only)    ← pick this
+
+Select build script DSL:
+  1: Kotlin
+  2: Groovy
+
+Project name: fix-engine
 ```
 
-Each subproject has its own `build.gradle.kts`. A subproject can depend on another:
+Basic gives you the wrapper and an empty `settings.gradle.kts` with nothing else — no `src/`, no `build.gradle.kts`. This is intentional: in a multi-module project, each submodule owns its own `build.gradle.kts`, so you don't want Gradle to scaffold one big one at the root.
+
+### Step 2: Create subdirectories manually
+
+Gradle won't create your submodule directories — you do that yourself:
+
+```bash
+mkdir fix-core fix-transport fix-session fix-app
+```
+
+Inside each, create a `build.gradle.kts` and the standard source layout:
+
+```
+fix-engine/
+├── gradlew
+├── settings.gradle.kts          # root — lists all submodules
+├── build.gradle.kts             # optional root build file (shared config)
+├── fix-core/
+│   ├── build.gradle.kts
+│   └── src/main/java/com/seroze/fix/core/
+├── fix-transport/
+│   ├── build.gradle.kts
+│   └── src/main/java/com/seroze/fix/transport/
+├── fix-session/
+│   ├── build.gradle.kts
+│   └── src/main/java/com/seroze/fix/session/
+└── fix-app/
+    ├── build.gradle.kts
+    └── src/main/java/com/seroze/fix/app/
+```
+
+### Step 3: Link submodules in `settings.gradle.kts`
+
+The root `settings.gradle.kts` must explicitly declare every submodule — Gradle won't discover them automatically:
 
 ```kotlin
-// web/build.gradle.kts
+rootProject.name = "fix-engine"
+
+include(
+    "fix-core",
+    "fix-transport",
+    "fix-session",
+    "fix-app"
+)
+```
+
+### Step 4: Package naming — use dots, not hyphens
+
+Java package names cannot contain hyphens (`-`). Even though your directory is named `fix-core`, the package name must use dots only:
+
+```
+fix-core/  →  package com.seroze.fix.core
+fix-transport/  →  package com.seroze.fix.transport
+fix-session/  →  package com.seroze.fix.session
+fix-app/  →  package com.seroze.fix.app
+```
+
+So the directory name and the package name are different things — the directory name can have hyphens (and that's idiomatic for Gradle module names), but the Java package inside it must use dots:
+
+```java
+// fix-core/src/main/java/com/seroze/fix/core/FixMessage.java
+package com.seroze.fix.core;
+
+public class FixMessage { ... }
+```
+
+### Step 5: Wire up inter-module dependencies
+
+Each submodule's `build.gradle.kts` references other modules via `project(":module-name")`:
+
+```kotlin
+// fix-session/build.gradle.kts
+plugins {
+    java
+}
+
 dependencies {
-    implementation(project(":core"))
-    implementation(project(":api"))
+    implementation(project(":fix-core"))
+    implementation(project(":fix-transport"))
 }
 ```
 
-Build a specific subproject:
-```bash
-./gradlew :web:build
-./gradlew :core:test
+```kotlin
+// fix-app/build.gradle.kts
+plugins {
+    java
+    application
+}
+
+dependencies {
+    implementation(project(":fix-core"))
+    implementation(project(":fix-session"))
+}
+
+application {
+    mainClass = "com.seroze.fix.app.Main"
+}
 ```
+
+### Building specific modules
+
+```bash
+./gradlew :fix-core:build
+./gradlew :fix-session:test
+./gradlew :fix-app:run
+
+# Build everything
+./gradlew build
+```
+
+Gradle resolves the dependency order automatically — if `fix-app` depends on `fix-session`, Gradle compiles `fix-session` first.
 
 ---
 
