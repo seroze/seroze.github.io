@@ -414,6 +414,54 @@ Gradle resolves the dependency order automatically — if `fix-app` depends on `
 
 ---
 
+## IntelliJ folder colors and Sources Root
+
+IntelliJ uses colored folder icons to tell you how it classifies each directory:
+
+| Color | Meaning |
+|---|---|
+| Blue | Sources Root — `src/main/java` |
+| Green | Test Sources Root — `src/test/java` |
+| Grey / plain | Regular directory or Resources Root |
+| Orange | Excluded — `build/`, `.gradle/` |
+
+### What "Mark as Sources Root" actually does
+
+It tells IntelliJ: *"Java packages begin here."*
+
+Say you have this layout:
+
+```
+fix-transport/
+  src/
+    main/
+      java/               ← Sources Root marked here
+        com/
+          seroze/
+            fix/
+              transport/
+                Transport.java
+```
+
+Because `src/main/java` is the Sources Root, IntelliJ strips everything up to and including it, and the remaining path becomes the package: `com.seroze.fix.transport`.
+
+If `fix-transport/` were the Sources Root instead, IntelliJ would infer the package as `src.main.java.com.seroze.fix.transport` — completely wrong, and nothing would compile or resolve correctly.
+
+### The practical consequence: the "New Package" button
+
+You can only create a new package by right-clicking a **Sources Root or Test Sources Root** (blue or green folder). If you right-click any other folder — including a plain `src/` or `main/` directory that hasn't been marked — IntelliJ won't show the "New Package" option, only "New Directory." The package option is the tell that IntelliJ knows where packages begin.
+
+### Why Gradle sync fixes this automatically
+
+When `build.gradle.kts` files are empty, Gradle never applies the Java plugin, so IntelliJ doesn't know about the standard source set layout. Once you add `apply(plugin = "java")` (or `plugins { java }`) and sync, Gradle registers:
+
+- `src/main/java` → Sources Root (blue)
+- `src/test/java` → Test Sources Root (green)
+
+The sync does this work — you should never need to mark them manually. If the folders are still grey after a sync, it almost always means the Java plugin isn't applied in that submodule's `build.gradle.kts`.
+
+---
+
 ## Quick reference
 
 | Command | What it does |
