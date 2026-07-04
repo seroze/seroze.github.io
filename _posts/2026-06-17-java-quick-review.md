@@ -845,3 +845,132 @@ class OrderService extends StripeGateway { }
 How do you replace `StripeGateway`? You usually can't without awkward subclassing or specialized mocking tools.
 
 Composition naturally supports **dependency injection**, making code easier to isolate in tests.
+
+---
+
+### Concurrency exercise — blocking top-N distinct elements
+
+> **Problem:** You're given two integers `N` and `K`, and an infinite stream of integers pushed to your data structure via `push()`. At any point someone may call `top()` to get the largest `N` **distinct** elements seen so far — but if fewer than `K` elements are present, `top()` must **block** until enough arrive.
+
+This is a classic *guarded block* problem — the same wait/notify pattern behind blocking queues.
+
+**Data structure choice:** a `TreeSet` with a descending comparator does most of the work. It deduplicates for free (it's a set), keeps elements sorted so the largest are always at the front, and lets us cap the size by evicting `last()` (the smallest). The first stage of the interview used a `PriorityQueue` plus a `seen` set to dedupe — which is where I hit a genuine surprise:
+
+<div style="border-left: 4px solid #e5534b; background: rgba(229, 83, 75, 0.12); padding: 0.75em 1em; margin: 1em 0; border-radius: 4px;" markdown="1">
+🔴 **Gotcha:** `PriorityQueue`'s **iterator does NOT return elements in sorted order.** A binary heap only guarantees that the *root* is the min/max — the rest of the backing array is in no particular order, and `iterator()` just walks that array. The only way to get elements out in sorted order is to `poll()` repeatedly, which **destroys the heap**. This caught me off guard mid-interview.
+
+```java
+PriorityQueue<Integer> pq = new PriorityQueue<>((a, b) -> b - a);
+pq.addAll(List.of(5, 1, 10, 3, 2));
+
+for (int x : pq) System.out.print(x + " ");
+// 10 3 5 1 2  — NOT sorted! (heap array order)
+
+while (!pq.isEmpty()) System.out.print(pq.poll() + " ");
+// 10 5 3 2 1  — sorted, but the queue is now empty
+```
+</div>
+
+That's why the final version uses a `TreeSet`: it's both a set (dedupe) and fully sorted, so `top()` can read the largest elements without draining anything.
+
+```java
+class LargestNDistinct {
+
+    private final TreeSet<Integer> ts;
+    private final int N;
+    private final int K;
+
+    public LargestNDistinct(int N, int K) {
+        // descending order — first() is the largest
+        this.ts = new TreeSet<>((a, b) -> Integer.compare(b, a));
+        this.N = N;
+        this.K = K;
+    }
+
+    public synchronized void push(int val) {
+        // duplicates are ignored — it's a set
+        if (ts.contains(val)) return;
+
+        ts.add(val);
+
+        // keep only the N largest: evict the smallest (last in descending order)
+        while (ts.size() > N) {
+            ts.remove(ts.last());
+        }
+
+        // wake up any threads blocked in top()
+        if (ts.size() >= K) this.notifyAll();
+    }
+
+    public synchronized Collection<Integer> top()
+            throws InterruptedException {
+
+        // guarded block: wait until at least K elements are present
+        while (ts.size() < K) this.wait();
+
+        ArrayList<Integer> ret = new ArrayList<>();
+        int i = 0;
+
+        while (i < this.N && !ts.isEmpty()) {
+            int elem = ts.first();   // largest remaining
+            ts.remove(elem);
+            ret.add(elem);
+            i++;
+        }
+
+        // restore the set — top() is a read, not a drain
+        for (int elem : ret) ts.add(elem);
+
+        return ret;
+    }
+}
+```
+
+A quick driver that shows the blocking behavior — the consumer calls `top()` before enough elements exist, and only unblocks once the producer pushes past the threshold:
+
+```java
+public class Solution {
+
+    public static void main(String[] args) throws InterruptedException {
+        LargestNDistinct lnd = new LargestNDistinct(3, 2);
+
+        Thread consumer = new Thread(() -> {
+            try {
+                System.out.println("Calling top() at " + System.currentTimeMillis());
+
+                Collection<Integer> ret = lnd.top();  // blocks — only 1 element so far
+
+                System.out.println("top() returned at " + System.currentTimeMillis());
+                for (int elem : ret) {
+                    System.out.print(elem + " ");
+                }
+                System.out.println();
+            } catch (InterruptedException ex) {
+                System.out.println(ex);
+            }
+        });
+
+        consumer.start();
+
+        lnd.push(100);        // only 1 element — consumer stays blocked
+        Thread.sleep(1000);
+
+        int[] inp = new int[]{5, 1, 5, 3, 10, 2, 10};
+        for (int elem : inp) lnd.push(elem);  // second push wakes the consumer
+    }
+}
+```
+
+**The concurrency mechanics worth remembering:**
+
+1. **`synchronized` on both methods** — `push()` and `top()` lock on `this`, so the `TreeSet` is never mutated by two threads at once. It also means the size check and the mutation happen atomically; without it, a thread could observe `ts.size() >= K` and have the set change under it.
+
+2. **`wait()` goes inside a `while` loop, never an `if`** — `wait()` can wake up *spuriously* (without a `notify`), and even after a legitimate notify, another thread may have changed the state before this thread reacquires the lock. Re-checking the condition in a loop handles both.
+
+3. **`wait()` releases the lock** — this is the part people miss. The consumer holds the monitor when it enters `top()`, but `wait()` atomically releases it and suspends the thread. That's why the producer's `synchronized push()` can still run while a consumer is blocked. On wake-up, the thread reacquires the lock before returning from `wait()`.
+
+4. **`notifyAll()` over `notify()`** — with multiple blocked consumers, `notify()` wakes only one arbitrary thread. `notifyAll()` wakes everyone; each re-checks the condition in its `while` loop, and those still unsatisfied go back to waiting. Slightly more wake-ups, far fewer lost-wakeup bugs.
+
+5. **`InterruptedException` is part of the contract** — any blocking call (`wait`, `sleep`, `join`) can be interrupted, so `top()` declares it and callers must handle it.
+
+The same problem can be solved with `ReentrantLock` + `Condition` (`await`/`signalAll`), which is the modern equivalent — but the intrinsic-monitor version above is the one interviewers usually want you to write from scratch.
