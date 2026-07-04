@@ -127,7 +127,9 @@ class Solution:
 
 The skipping still happens — it's implicit in jumping from `i` to `ii` — but there's only **one** way to skip a contiguous block, so nothing is double-counted.
 
-Complexity: $$O(n_1 \cdot n_2 \cdot n_t)$$ states (×4 for the flags), each transition loop is $$O(n_1 + n_2)$$ — comfortably fast for $$n \le 100$$.
+**Complexity:** there are $$O(n_1 \cdot n_2 \cdot n_t)$$ states (×4 for the flags), and each state does $$O(n_1 + n_2)$$ work in the transition loops — so overall this is $$O(N^4)$$ if all lengths are ~$$N$$. That's fine for $$N \le 100$$, but it's not optimal.
+
+**Exercise — can you get this down to $$O(N^3)$$?** Notice that the transition loops at neighboring states scan almost the same suffix: the loop at `(i, j, k)` over `ii in range(i, nw1)` repeats all the work of the loop at `(i+1, j, k)` plus one extra check. Whenever a DP's transition is "sum over all later positions", that's a suffix-sum smell — the loop can usually be folded into the state itself, making each transition $$O(1)$$. Think about it before reaching for the editorial.
 
 ---
 
