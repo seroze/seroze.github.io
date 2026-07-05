@@ -12,6 +12,47 @@ published: true
 
 ---
 
+Before diving in, here's where sagas sit in the broader distributed systems landscape:
+
+```
+Distributed Systems
+│
+├── Consensus
+│   ├── Raft
+│   ├── Paxos
+│   └── Zab
+│
+├── Replication
+│   ├── Primary-Replica
+│   ├── Multi-Leader
+│   └── Leaderless
+│
+├── Messaging
+│   ├── Kafka
+│   ├── RabbitMQ
+│   └── Pulsar
+│
+└── Distributed Transactions
+    │
+    ├── ACID (single database)
+    │
+    ├── 2PC (Two Phase Commit)
+    │
+    ├── 3PC
+    │
+    ├── Saga Pattern
+    │   ├── Orchestration
+    │   └── Choreography
+    │
+    ├── TCC (Try Confirm Cancel)
+    │
+    ├── Event Sourcing
+    │
+    ├── Outbox Pattern
+    │
+    └── CQRS
+```
+
 ## Refresher: what a saga is
 
 In a monolith, "place an order" is one ACID transaction. Split it across microservices — each with its own database — and no single transaction can span them. A **saga** is the standard answer: run the operation as a **sequence of local transactions**, each committed independently in its own service. If step N fails, you can't roll back the earlier steps (they already committed), so you run **compensating transactions** in reverse order to semantically undo them: refund the payment, restock the inventory, cancel the order.
@@ -19,7 +60,7 @@ In a monolith, "place an order" is one ACID transaction. Split it across microse
 Two coordination styles:
 
 - **Orchestration** — a central coordinator (a saga class, or an engine like Temporal / AWS Step Functions / Camunda) drives each step and tracks state. The flow is explicit and readable in one place; the cost is coupling to every participant.
-- **Choreography** — no coordinator; each service reacts to the others' events, usually through a broker like Kafka. Decoupled and simple for short flows, but the workflow exists nowhere explicitly — debugging a 6-step flow becomes archaeology.
+- **Choreography** — no coordinator; each service reacts to the others' events, usually through a broker like Kafka. Decoupled and simple for short flows, but the workflow exists nowhere explicitly — debugging a 6-step flow becomes archaeology. This failure mode is sometimes called **"pinball architecture"**: requests bounce between services like a pinball, and nobody can say where the ball is or why it went there. [This talk](https://www.youtube.com/watch?v=ysFP6X7rJhA) is a good presentation on the problems with advanced messaging patterns and how pinball architectures go wrong.
 
 Typical uses: e-commerce checkout (order → payment → inventory → shipping), travel booking (flight + hotel + car), food delivery, banking and ledger flows — any business process spanning services with independent stores.
 
