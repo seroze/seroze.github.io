@@ -6,11 +6,32 @@ permalink: /tags/
 
 <h1>Tags</h1>
 
+<p id="show-all-tags" style="display: none;"><a href="/tags/">&larr; Show all tags</a></p>
+
 {% for tag in site.tags %}
-<h2 id="{{ tag[0] | slugify }}">{{ tag[0] }}</h2>
-<ul>
-    {% for post in tag[1] %}
-    <li><a href="{{ post.url }}">{{ post.title }}</a></li>
-    {% endfor %}
-</ul>
+<div class="tag-section" id="{{ tag[0] | slugify }}">
+    <h2>{{ tag[0] }}</h2>
+    <ul>
+        {% for post in tag[1] %}
+        <li><a href="{{ post.url }}">{{ post.title }}</a></li>
+        {% endfor %}
+    </ul>
+</div>
 {% endfor %}
+
+<script>
+  function filterTags() {
+    var hash = decodeURIComponent(location.hash.slice(1));
+    var sections = document.querySelectorAll(".tag-section");
+    var matched = false;
+    sections.forEach(function (s) {
+      if (s.id === hash) matched = true;
+    });
+    sections.forEach(function (s) {
+      s.style.display = !matched || s.id === hash ? "" : "none";
+    });
+    document.getElementById("show-all-tags").style.display = matched ? "" : "none";
+  }
+  window.addEventListener("hashchange", filterTags);
+  filterTags();
+</script>
