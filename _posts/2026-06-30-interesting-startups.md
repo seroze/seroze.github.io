@@ -12,6 +12,14 @@ published: true
 
 ---
 
+## [AfterQuery](https://afterquery.com/)
+
+AfterQuery builds expert-grade evaluation data and benchmarks for frontier AI labs — measuring what models can actually do in real professional workflows rather than toy tasks. They recently helped build **SpreadsheetBench 2**, a benchmark that seeds realistic financial models (LBOs, DCFs, merger and credit models) with deliberate bugs — sign errors, unit/timing mismatches, hardcodes, broken cross-sheet references — and asks AI agents to audit and fix them, exactly what a first-year analyst would do. Frontier models still miss roughly half the required fixes (Claude Opus 4.6 corrects 50% of target cells, Gemini 3.1 Pro 42%, GPT-5.2 39%), and the scary part is they fail *quietly*, returning polished workbooks that hide errors a junior analyst would catch.
+
+**Use case:** an investment bank or private equity firm evaluating AI copilots for its analysts can use benchmarks like SpreadsheetBench 2 to know exactly how much of a model's output still needs human review before trusting it with live deal models.
+
+---
+
 ## [Flapping Airplanes](https://flappingairplanes.com/)
 
 *(description coming soon)*
