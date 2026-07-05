@@ -3,7 +3,7 @@ layout: post
 title: "Palindromic Subarray Sum with Rolling Hashes"
 date: 2026-07-05 00:00:00 +0530
 categories: competitive-programming
-tags: [cp, rolling_hashing]
+tags: [cp, rolling_hashing, leetcode]
 author: "Seroze"
 published: true
 ---
