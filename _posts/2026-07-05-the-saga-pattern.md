@@ -46,11 +46,9 @@ Distributed Systems
     │
     ├── TCC (Try Confirm Cancel)
     │
-    ├── Event Sourcing
+    ├── Event Sourcing (used in conjunction with CQRS)
     │
-    ├── Outbox Pattern
-    │
-    └── CQRS
+    └── Outbox Pattern
 ```
 
 ## Refresher: what a saga is
