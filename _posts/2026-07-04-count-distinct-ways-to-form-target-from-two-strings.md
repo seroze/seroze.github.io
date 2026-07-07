@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "Count Distinct Ways to Form Target from Two Strings"
+title: "[Leetcode] Count Distinct Ways to Form Target from Two Strings"
 date: 2026-07-04 00:00:00 +0530
 categories: competitive-programming
 tags: [cp, dynamic_programming, leetcode]
