@@ -160,3 +160,25 @@ P(\text{word} \mid \text{context}) = \text{softmax}(\text{scores})
 $$
 
 Training adjusts both the embedding matrix and the linear layer so that words appearing in similar contexts end up with similar embedding vectors. **This is how CBOW learns meaningful word embeddings.**
+
+## Going deeper: Deep CBOW
+
+![Deep CBoW architecture]({{ site.baseurl }}/assets/images/deep-cbow-architecture.png)
+
+Deep CBOW keeps the same bottom half — embed each word, sum into a context vector $$h^{(1)}$$ — but instead of feeding it straight into the output linear layer, it stacks extra hidden layers in between:
+
+$$
+h^{(2)} = \tanh\!\left(W^{(1)} h^{(1)} + b^{(1)}\right)
+$$
+
+$$
+h^{(3)} = \tanh\!\left(W^{(2)} h^{(2)} + b^{(2)}\right)
+$$
+
+$$
+\text{scores} = W h^{(3)} + b
+$$
+
+The addition of $$\tanh$$ introduces a **non-linearity**. This is the whole point: without it, stacking linear layers is useless, because a composition of linear maps collapses into a single linear map — $$W^{(2)}(W^{(1)}h)$$ is just another matrix times $$h$$. With the non-linearity in between, the extra layers can model **combinations of words** rather than treating each word's contribution independently — e.g. "don't" and "love" appearing together can push the output in a different direction than either word alone.
+
+The parameter list grows accordingly: the embedding layer, the hidden-layer weights $$W^{(1)}, W^{(2)}$$ and their biases, and the final output weights $$W$$ and bias.
