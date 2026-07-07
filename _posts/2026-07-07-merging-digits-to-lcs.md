@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "[Codeforces] From Merging Digits to Longest Common Subsequence — A Beautiful Insight"
+title: "[Codeforces] Edu Round 192 D — From Merging Digits to Longest Common Subsequence"
 date: 2026-07-07 00:00:00 +0530
 categories: competitive-programming
 tags: [cp, dynamic_programming, lcs, codeforces]

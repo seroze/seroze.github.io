@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "[Leetcode] Palindromic Subarray Sum with Rolling Hashes"
+title: "[Leetcode] Weekly 509 — Palindromic Subarray Sum with Rolling Hashes"
 date: 2026-07-05 00:00:00 +0530
 categories: competitive-programming
 tags: [cp, rolling_hashing, leetcode]

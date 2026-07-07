@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "[Repovive] Distant Transfers — Deriving Invariants Instead of Constructing Moves"
+title: "[Repovive] Starter Round 4 D — Distant Transfers: Deriving Invariants Instead of Constructing Moves"
 date: 2026-07-06 00:00:00 +0530
 categories: competitive-programming
 tags: [cp, binary-search, greedy, repovive]

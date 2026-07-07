@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "[Repovive] Corner Meeting — Minimizing the Max of an Increasing and a Decreasing Function"
+title: "[Repovive] Starter Round 4 C — Corner Meeting: Minimizing the Max of an Increasing and a Decreasing Function"
 date: 2026-07-06 00:00:00 +0530
 categories: competitive-programming
 tags: [cp, math, repovive]
