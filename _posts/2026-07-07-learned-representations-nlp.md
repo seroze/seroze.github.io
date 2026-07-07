@@ -110,8 +110,10 @@ $$
 The word with the highest probability is the prediction.
 
 ## Why K output classes?
+{: style="color: #0b5fff;"}
 
 Because predicting a word is treated as a **classification problem**. If the vocabulary contains 10,000 words, there are 10,000 possible answers — each output neuron corresponds to one vocabulary word.
+{: style="color: #0b5fff;"}
 
 ## What are the parameters?
 
