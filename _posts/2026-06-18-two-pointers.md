@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "Two Pointers in Competitive Programming"
+title: "[Competitive Programming] Two Pointers"
 date: 2026-06-18 00:00:00 +0530
 categories: competitive-programming
 tags: [competitive-programming, two-pointers, arrays]
