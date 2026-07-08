@@ -20,6 +20,14 @@ AfterQuery builds expert-grade evaluation data and benchmarks for frontier AI la
 
 ---
 
+## [Bottlecap](https://www.bottlecapai.com/)
+
+Bottlecap makes existing AI models more efficient rather than building new ones — fine-tuning them to cut out wasted internal reasoning while preserving capability. Their [ThinkingCap Qwen3.6-27B](https://www.bottlecapai.com/thinkingcap-qwen3-6-27b) is a fine-tune of Qwen's 27B model that uses roughly half the thinking tokens of the base version: across 12 out-of-domain benchmarks it cuts tokens by 45.8% with only a 0.7-point accuracy drop, and on in-domain knowledge tasks it cuts 57.7% of tokens while actually *gaining* 1.0 point of accuracy. Fewer tokens means lower latency, lower cost, and less reasoning stuck in loops. The model is open under Apache 2.0 on HuggingFace.
+
+**Use case:** anyone running reasoning models at scale under a token budget — inference providers or product teams who want the same answers with half the compute bill.
+
+---
+
 ## [Flapping Airplanes](https://flappingairplanes.com/)
 
 *(description coming soon)*
