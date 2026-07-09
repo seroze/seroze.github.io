@@ -60,7 +60,7 @@ tailscale ping <hostname>
 
 If `tailscale ping` succeeds in both directions, your network is healthy.
 
-At that point, any remaining issue is almost certainly related to SSH configuration.
+At that point, any remaining issue is almost certainly related to SSH configuration — including, as I later re-learned, whether `sshd` is even running (see [section 14](#14-tailscale-ping-succeeding-doesnt-mean-sshd-is-running)).
 
 ## 3. Windows does not install an SSH server by default
 
@@ -286,6 +286,64 @@ If I were setting this up again:
 6. Check whether the Windows account belongs to the Administrators group.
 7. Configure an SSH alias with `IdentitiesOnly yes`.
 8. Configure WSL to start in the Linux home directory (or even make WSL the default shell for SSH sessions).
+
+## 14. tailscale ping succeeding doesn't mean sshd is running
+
+Months after the initial setup, I hit this again: SSH over Tailscale simply failed to connect.
+
+First instinct — re-check the network:
+
+```bash
+tailscale ping windows-machine
+```
+
+It succeeded, round trip and all. So the tailnet was healthy, the peer was reachable, and the connection wasn't even going through a DERP relay. And yet SSH still refused to connect.
+
+The actual cause: the `sshd` service on the Windows box was simply stopped. Fixed it the same way as section 4:
+
+```powershell
+Get-Service sshd
+Start-Service sshd
+Set-Service -Name sshd -StartupType Automatic
+```
+
+Setting the startup type to `Automatic` matters — this is what prevents the service from silently staying down after the next reboot or Windows update.
+
+**Why did `tailscale ping` succeed at all if the SSH server was down?**
+
+Because `tailscale ping` doesn't test SSH, or any application, at all. It operates purely at the tailnet/network layer:
+
+```
+Mac  ──(WireGuard tunnel)──▶  Windows (tailscaled)
+                 │
+                 └── proves: this peer is up and reachable
+                     over the tailnet (direct, or via DERP relay)
+```
+
+It's answered entirely by the `tailscaled` daemon on the peer — it has zero visibility into which services or ports are listening on top of that network. A machine can have a perfectly healthy Tailscale connection while every single service on it (SSH, RDP, whatever) is stopped. This is really just section 1's lesson again — *Tailscale is only the network* — showing up in a new, more confusing shape: it's easy to assume a successful ping clears SSH of suspicion, but it only clears the network layer.
+
+**The takeaway / checklist for next time SSH-over-Tailscale fails:**
+
+1. `tailscale ping <host>` succeeds → network layer is fine, stop debugging Tailscale.
+2. SSH still fails → check whether `sshd` is actually running on the target, *not* just correctly configured:
+   ```powershell
+   Get-Service sshd
+   ```
+3. If it's `Stopped`, start it and set it to `Automatic` so it survives reboots:
+   ```powershell
+   Start-Service sshd
+   Set-Service -Name sshd -StartupType Automatic
+   ```
+4. Always double check `StartType` is actually `Automatic` afterwards — don't just assume the command worked:
+   ```powershell
+   Get-Service sshd | Select-Object Name, Status, StartType
+   ```
+   ```
+   Name  Status  StartType
+   ----  ------  ---------
+   sshd  Running Automatic
+   ```
+   If `StartType` ever drifts back to `Manual` or `Disabled` (e.g. after a Windows update), this is the step that catches it before it causes the next confusing outage.
 
 ## Final Thoughts
 
