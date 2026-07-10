@@ -345,6 +345,32 @@ It's answered entirely by the `tailscaled` daemon on the peer — it has zero vi
    ```
    If `StartType` ever drifts back to `Manual` or `Disabled` (e.g. after a Windows update), this is the step that catches it before it causes the next confusing outage.
 
+## 15. Skip the `wsl --cd ~` dance entirely — make WSL the default SSH shell
+
+Section 11's `wsl --cd ~` workaround is fine, but it's still a manual step you have to remember on every connection. There's a better fix: tell OpenSSH to launch WSL itself as the login shell, so every SSH session lands directly inside WSL — no intermediate `cmd.exe`/PowerShell hop at all.
+
+From an elevated PowerShell session on the Windows box:
+
+```powershell
+New-ItemProperty -Path "HKLM:\SOFTWARE\OpenSSH" -Name DefaultShell -Value "C:\Windows\System32\wsl.exe" -PropertyType String -Force
+```
+
+Now:
+
+```bash
+ssh windows-machine
+```
+
+drops you straight into your default WSL distro's shell, in its normal Linux home directory — the exact same effect as section 11's `wsl --cd ~`, but automatic, for every session, forever.
+
+**Caveat worth knowing:** `DefaultShell` isn't limited to interactive logins — it becomes the shell OpenSSH uses for *any* command execution over that connection, including non-interactive `ssh host <command>` calls and tools that shell out over SSH (e.g. `scp`, some remote-exec tooling in editors). If anything in your workflow still expects a native Windows shell over SSH, that will now be routed through `wsl.exe` instead. For a personal dev box that's basically always used as a WSL target, this tradeoff is a non-issue; for a mixed-use machine, weigh it first.
+
+To revert to the default Windows shell:
+
+```powershell
+Remove-ItemProperty -Path "HKLM:\SOFTWARE\OpenSSH" -Name DefaultShell
+```
+
 ## Final Thoughts
 
 Most of the complexity wasn't in Tailscale—it was in understanding how Windows' OpenSSH implementation differs from the Linux/macOS defaults. Once configured, the experience is seamless: instant, passwordless SSH into a WSL environment over a secure private network, making remote development feel almost indistinguishable from working locally.
