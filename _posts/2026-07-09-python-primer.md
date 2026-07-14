@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "Python Primer"
+title: "A primer on Python"
 date: 2026-07-09 00:00:00 +0530
 categories: python
 tags: [python, typing, protocols]
