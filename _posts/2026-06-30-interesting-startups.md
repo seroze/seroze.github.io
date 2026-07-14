@@ -20,6 +20,14 @@ AfterQuery builds expert-grade evaluation data and benchmarks for frontier AI la
 
 ---
 
+## [Archil](https://archil.com/)
+
+Archil builds a distributed filesystem for AI agents — infinite storage that mounts like a local disk, with share, snapshot, and fork capabilities. Sachin Raja's article ["The 2026 AI Infra Startup Template"](https://x.com/s4chinraja/status/2076747836818104457) argues that most agent-focused infra startups (agent browsers, agent databases, orchestration layers) reduce to exactly this primitive: networked Linux applications running in sandboxes on top of a shared, forkable filesystem. He demonstrates the template with an [agent browser built on Archil](https://github.com/sachinraja/archil-browser).
+
+**Use case:** anyone building agent infrastructure — instead of a bespoke "browser for agents" or "database for agents" product, compose a sandboxed Linux app with a distributed filesystem and get sharing, snapshotting, and forking for free.
+
+---
+
 ## [Bottlecap](https://www.bottlecapai.com/)
 
 Bottlecap makes existing AI models more efficient rather than building new ones — fine-tuning them to cut out wasted internal reasoning while preserving capability. Their [ThinkingCap Qwen3.6-27B](https://www.bottlecapai.com/thinkingcap-qwen3-6-27b) is a fine-tune of Qwen's 27B model that uses roughly half the thinking tokens of the base version: across 12 out-of-domain benchmarks it cuts tokens by 45.8% with only a 0.7-point accuracy drop, and on in-domain knowledge tasks it cuts 57.7% of tokens while actually *gaining* 1.0 point of accuracy. Fewer tokens means lower latency, lower cost, and less reasoning stuck in loops. The model is open under Apache 2.0 on HuggingFace.
