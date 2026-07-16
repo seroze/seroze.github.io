@@ -3,7 +3,7 @@ layout: post
 title: "Philosophy, Part 1: Think in Failure Patterns"
 date: 2026-06-24 00:00:00 +0530
 categories: philosophy
-tags: [philosophy, mental-models, decision-making]
+tags: [philosophy, mental_models, decision_making]
 author: "Seroze"
 published: true
 ---

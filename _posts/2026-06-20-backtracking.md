@@ -3,7 +3,7 @@ layout: post
 title: "Backtracking — The Art of Systematic Undoing"
 date: 2026-06-20 00:00:00 +0530
 categories: competitive-programming
-tags: [competitive-programming, backtracking, recursion, dfs]
+tags: [competitive_programming, backtracking, recursion, dfs]
 author: "Seroze"
 published: true
 ---

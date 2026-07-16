@@ -3,7 +3,7 @@ layout: post
 title: "[CodeChef] Starters 247 — Red Blue Swaps: From Swaps to Buckets (A DP Pattern)"
 date: 2026-07-16 00:00:00 +0530
 categories: competitive-programming
-tags: [cp, dp, codechef]
+tags: [competitive_programming, dynamic_programming, codechef]
 author: "Seroze"
 published: true
 ---

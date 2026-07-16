@@ -3,7 +3,7 @@ layout: post
 title: "Java Quick Review"
 date: 2026-06-17 00:00:00 +0530
 categories: java
-tags: [java, interview, data-structures]
+tags: [java, interview, data_structures]
 author: "Seroze"
 published: true
 ---

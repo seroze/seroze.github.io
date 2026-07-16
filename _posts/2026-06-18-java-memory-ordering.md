@@ -3,7 +3,7 @@ layout: post
 title: "Memory Ordering in Java"
 date: 2026-06-18 00:00:00 +0530
 categories: java
-tags: [java, concurrency, memory-model]
+tags: [java, concurrency, memory_model]
 author: "Seroze"
 published: true
 ---

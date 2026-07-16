@@ -3,7 +3,7 @@ layout: post
 title: "SSH Tunnelling — Forwarding Ports Over SSH"
 date: 2026-06-21 00:00:00 +0530
 categories: networking
-tags: [ssh, networking, tunnelling, port-forwarding]
+tags: [ssh, networking, tunnelling, port_forwarding]
 author: "Seroze"
 published: true
 ---

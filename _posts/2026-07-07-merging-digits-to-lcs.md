@@ -3,7 +3,7 @@ layout: post
 title: "[Codeforces] Edu Round 192 D — From Merging Digits to Longest Common Subsequence"
 date: 2026-07-07 00:00:00 +0530
 categories: competitive-programming
-tags: [cp, dynamic_programming, lcs, codeforces]
+tags: [competitive_programming, dynamic_programming, lcs, codeforces]
 author: "Seroze"
 published: true
 ---

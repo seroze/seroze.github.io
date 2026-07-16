@@ -3,7 +3,7 @@ layout: post
 title: "Build Your Own PyTorch — Understanding Deep Learning Frameworks From the Inside Out"
 date: 2026-06-29 00:00:00 +0530
 categories: machine-learning
-tags: [pytorch, deep-learning, autograd, from-scratch, systems]
+tags: [pytorch, deep_learning, autograd, from_scratch, systems]
 author: "Seroze"
 published: true
 ---

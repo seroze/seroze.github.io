@@ -3,7 +3,7 @@ layout: post
 title: "[Competitive Programming] Möbius Function"
 date: 2026-06-18 00:00:00 +0530
 categories: competitive-programming
-tags: [competitive-programming, number-theory, mobius]
+tags: [competitive_programming, number_theory, mobius]
 author: "Seroze"
 published: true
 ---

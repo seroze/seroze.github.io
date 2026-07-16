@@ -3,7 +3,7 @@ layout: post
 title: "Autoregressive Language Modeling"
 date: 2026-07-07 00:00:00 +0530
 categories: machine-learning
-tags: [nlp, language-modeling, n-grams, neural-networks]
+tags: [nlp, language_modeling, n_grams, neural_networks]
 author: "Seroze"
 published: true
 ---

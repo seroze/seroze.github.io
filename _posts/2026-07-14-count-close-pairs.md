@@ -3,7 +3,7 @@ layout: post
 title: "[AtCoder] ABC466 C — Count Close Pairs"
 date: 2026-07-14 00:00:00 +0530
 categories: competitive-programming
-tags: [cp, two-pointers, interactive, atcoder]
+tags: [competitive_programming, two_pointers, interactive, atcoder]
 author: "Seroze"
 published: true
 ---

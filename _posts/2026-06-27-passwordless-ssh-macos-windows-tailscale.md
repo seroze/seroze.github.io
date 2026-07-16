@@ -3,7 +3,7 @@ layout: post
 title: "Setting Up Passwordless SSH from macOS to Windows over Tailscale: Lessons Learned"
 date: 2026-06-27 00:00:00 +0530
 categories: devtools
-tags: [ssh, tailscale, windows, wsl, macos, remote-development]
+tags: [ssh, tailscale, windows, wsl, macos, remote_development]
 author: "Seroze"
 published: true
 ---

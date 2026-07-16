@@ -3,7 +3,7 @@ layout: post
 title: "[Leetcode] Biweekly 186 — Count Distinct Ways to Form Target from Two Strings"
 date: 2026-07-04 00:00:00 +0530
 categories: competitive-programming
-tags: [cp, dynamic_programming, leetcode]
+tags: [competitive_programming, dynamic_programming, leetcode]
 author: "Seroze"
 published: true
 ---

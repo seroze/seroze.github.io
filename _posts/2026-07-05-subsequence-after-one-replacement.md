@@ -3,7 +3,7 @@ layout: post
 title: "[Leetcode] Weekly 509 — Subsequence After One Replacement: Did You Consume the Matched Character?"
 date: 2026-07-05 00:00:00 +0530
 categories: competitive-programming
-tags: [cp, two_pointers, leetcode]
+tags: [competitive_programming, two_pointers, leetcode]
 author: "Seroze"
 published: true
 ---

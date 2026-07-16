@@ -3,7 +3,7 @@ layout: post
 title: "Tokenizer"
 date: 2026-07-06 00:00:00 +0530
 categories: machine-learning
-tags: [llm, tokenizer, unicode, utf-8]
+tags: [llm, tokenizer, unicode, utf_8]
 author: "Seroze"
 published: true
 ---

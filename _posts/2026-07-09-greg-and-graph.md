@@ -3,7 +3,7 @@ layout: post
 title: "[Codeforces] Round 179 (Div. 1) B — Greg and Graph: Learning to Think in Reverse"
 date: 2026-07-09 00:00:00 +0530
 categories: competitive-programming
-tags: [cp, graphs, shortest_paths, floyd_warshall, codeforces]
+tags: [competitive_programming, graphs, shortest_paths, floyd_warshall, codeforces]
 author: "Seroze"
 published: true
 ---

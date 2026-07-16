@@ -3,7 +3,7 @@ layout: post
 title: "[Codeforces] Round 1103 (Div. 3) F1 — Elections in Saransk (Easy Version): Prime-wise Counting"
 date: 2026-07-10 00:00:00 +0530
 categories: competitive-programming
-tags: [cp, number-theory, codeforces]
+tags: [competitive_programming, number_theory, codeforces]
 author: "Seroze"
 published: true
 ---

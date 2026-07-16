@@ -3,7 +3,7 @@ layout: post
 title: "How to Train Your Own LLM — A 20-Session Curriculum"
 date: 2026-06-27 00:00:00 +0530
 categories: machine-learning
-tags: [llm, transformers, training, distributed-training, deep-learning]
+tags: [llm, transformers, training, distributed_training, deep_learning]
 author: "Seroze"
 published: true
 ---

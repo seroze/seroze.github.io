@@ -3,7 +3,7 @@ layout: post
 title: "[Codeforces] Edu Round 192 B — A Small Algebra Trick That Turns an O(n²) Idea into O(n)"
 date: 2026-07-07 00:00:00 +0530
 categories: competitive-programming
-tags: [cp, prefix_sums, codeforces]
+tags: [competitive_programming, prefix_sums, codeforces]
 author: "Seroze"
 published: true
 ---
