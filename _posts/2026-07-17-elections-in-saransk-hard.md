@@ -312,6 +312,125 @@ Since every number up to $$5 \cdot 10^5$$ contains only a few distinct prime fac
 
 ---
 
+## Code
+
+The implementation below keeps the state as `(mx, sum)` and prunes any state where `sum - mx` already exceeds `k` (called `need` in the code) — the same invariant, just tracked as the raw sum instead of the difference. At the end, only states with `sum = mx + need` are counted.
+
+```python
+MOD = 10**9 + 7
+
+# smallest prime factor
+MAXA = 500000
+spf = list(range(MAXA + 1))
+for i in range(2, int(MAXA ** 0.5) + 1):
+    if spf[i] == i:
+        for j in range(i * i, MAXA + 1, i):
+            if spf[j] == j:
+                spf[j] = i
+
+
+def factor_exp(x):
+    """returns {prime: exponent}"""
+    mp = {}
+    while x > 1:
+        p = spf[x]
+        c = 0
+        while x % p == 0:
+            x //= p
+            c += 1
+        mp[p] = c
+    return mp
+
+
+def count_prime(cap, need):
+    """
+    cap[i] = exponent of this prime in ai
+    need = exponent of this prime in x
+
+    count assignments e_i satisfying
+        0<=e_i<=cap[i]
+        sum(e)-max(e)=need
+    """
+
+    n = len(cap)
+
+    # sum can never exceed need+18 <= 36
+    LIM = need + 18
+
+    dp = [[0] * (LIM + 1) for _ in range(19)]
+    dp[0][0] = 1
+
+    for lim in cap:
+        ndp = [[0] * (LIM + 1) for _ in range(19)]
+
+        for mx in range(19):
+            for s in range(LIM + 1):
+                cur = dp[mx][s]
+                if cur == 0:
+                    continue
+
+                for e in range(lim + 1):
+                    ns = s + e
+                    if ns > LIM:
+                        break
+
+                    nmx = max(mx, e)
+                    if ns - nmx > need:
+                        continue
+
+                    ndp[nmx][ns] += cur
+                    if ndp[nmx][ns] >= MOD:
+                        ndp[nmx][ns] %= MOD
+
+        dp = ndp
+
+    ans = 0
+    for mx in range(19):
+        s = mx + need
+        if s <= LIM:
+            ans += dp[mx][s]
+
+    return ans % MOD
+
+
+def solve():
+    import sys
+
+    input = sys.stdin.readline
+
+    t = int(input())
+
+    for _ in range(t):
+        n, x = map(int, input().split())
+        a = list(map(int, input().split()))
+
+        fx = factor_exp(x)
+
+        # all primes appearing anywhere
+        primes = set(fx.keys())
+        fa = []
+
+        for v in a:
+            f = factor_exp(v)
+            fa.append(f)
+            primes.update(f.keys())
+
+        ans = 1
+
+        for p in primes:
+            need = fx.get(p, 0)
+            cap = [f.get(p, 0) for f in fa]
+            ans = ans * count_prime(cap, need) % MOD
+
+        print(ans)
+
+
+if __name__ == "__main__":
+    solve()
+```
+
+---
+
 ## Takeaway
 
 The most satisfying part of this problem wasn't the DP — it was identifying the right quantity to track.
