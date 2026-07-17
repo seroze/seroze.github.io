@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "WhatsApp System Design"
+title: "[System Design] WhatsApp architecture"
 date: 2026-07-17 00:00:00 +0530
 categories: system-design
 tags: [system_design]
