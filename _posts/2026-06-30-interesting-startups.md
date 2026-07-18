@@ -51,3 +51,15 @@ General Intuition is a frontier AI lab building models that can perceive, predic
 ## [Standard Intelligence](https://si.inc/)
 
 Standard Intelligence is building general-purpose AI models focused on autonomous action and perception — systems that explore and learn like humans do. Their work spans computer vision capable of navigating websites and physical environments, as well as conversational AI for natural speech. They're targeting enterprises and developers who need AI that can handle complex, multi-step tasks rather than narrow single-purpose models.
+
+---
+
+# Startups I think won't work
+
+*And why — I could be wrong, but noting my reasoning so I can check back later.*
+
+## [TalentPluto](https://talentpluto.com/companies?selected-company=hdixqO0v9)
+
+TalentPluto is an AI recruiter that makes "warm intros" between companies and candidates. The catch: candidates onboard by describing themselves to an AI voice agent that "learns your story in 10 minutes."
+
+**Why I'm skeptical:** making candidates narrate their own background over voice adds a lot of friction — everyone already has a resume that captures this. The better flow would be the inverse: upload your resume first, then converse with the voice agent for suggestions and to fill in the gaps.
