@@ -8,7 +8,7 @@ author: "Seroze"
 published: true
 ---
 
-*[Codeforces Round 1103 (Div. 3) — Problem F2: Elections in Saransk (hard version)](https://codeforces.com/contest/2246/problem/F2). The hard version initially looked much more difficult than the [easy version]({% post_url 2026-07-10-elections-in-saransk %}), but after rewriting the condition in terms of prime exponents, the problem boils down to a surprisingly small DP.*
+*[Codeforces Round 1103 (Div. 3) — Problem F2: Elections in Saransk (hard version)](https://codeforces.com/contest/2236/problem/F2). The hard version initially looked much more difficult than the [easy version]({% post_url 2026-07-10-elections-in-saransk %}), but after rewriting the condition in terms of prime exponents, the problem boils down to a surprisingly small DP.*
 
 ---
 

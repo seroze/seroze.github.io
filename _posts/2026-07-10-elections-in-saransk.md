@@ -8,7 +8,7 @@ author: "Seroze"
 published: true
 ---
 
-*[Codeforces Round 1103 (Div. 3) — Problem F1: Elections in Saransk (easy version)](https://codeforces.com/contest/2246/problem/F1) (rated 1700, $$x = 1$$ in this version). The condition looks like it's about LCM, but the real trick is to stop thinking about numbers entirely and think prime by prime.*
+*[Codeforces Round 1103 (Div. 3) — Problem F1: Elections in Saransk (easy version)](https://codeforces.com/contest/2236/problem/F1) (rated 1700, $$x = 1$$ in this version). The condition looks like it's about LCM, but the real trick is to stop thinking about numbers entirely and think prime by prime.*
 
 ---
 
