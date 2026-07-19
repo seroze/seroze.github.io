@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "[Codeforces] Round 1103 (Div. 3) E — Friendly Gifts: Good Segments and Unique Partners (WIP)"
+title: "[Codeforces] Round 1103 (Div. 3) E — Friendly Gifts: Disjoint Value Intervals"
 date: 2026-07-18 00:00:00 +0530
 categories: competitive-programming
 tags: [competitive_programming, codeforces, brute_force, hashing]
@@ -8,7 +8,7 @@ author: "Seroze"
 published: true
 ---
 
-*[Codeforces Round 1103 (Div. 3) — Problem E: Friendly Gifts](https://codeforces.com/contest/2236/problem/E). My current approach captures the two key observations but still fails with Memory Limit Exceeded — writing it up anyway, with a TODO for the missing optimization.*
+*[Codeforces Round 1103 (Div. 3) — Problem E: Friendly Gifts](https://codeforces.com/contest/2236/problem/E). My initial sweep-line approach captured the two key observations but ran into Memory Limit Exceeded. The editorial's insight — disjoint value intervals automatically imply disjoint subarrays — makes the whole position-tracking machinery unnecessary.*
 
 ## Problem Summary
 
@@ -182,12 +182,112 @@ So while the overall idea is elegant, the state representation is still too larg
 
 ---
 
-## TODO
+## Final Solution
 
-This solution **does not pass** due to memory usage and requires further optimization.
+The key observation from the editorial is that we never need to track the **positions** of the good segments.
 
-Possible directions to investigate:
+Suppose two good segments have value intervals
 
-- Compress the representation of active value intervals.
-- Avoid storing every distinct `(mn, mx)` pair in the hash map.
-- Look for a stronger observation that reduces the state space to `O(n)` or `O(n²)` bits instead of `O(n²)` hash entries.
+```text
+[x, x + L - 1]
+[x + L, x + 2L - 1]
+```
+
+These value ranges are disjoint. Therefore, the corresponding subarrays **cannot overlap in the original array**, since a single array position cannot contain two different values. This completely eliminates the need for a sweep-line or interval matching approach.
+
+Instead, we only need to record whether a particular value interval exists.
+
+### Algorithm
+
+1. Enumerate every subarray.
+2. Maintain:
+   - current minimum,
+   - current maximum,
+   - duplicate detection using a timestamp array.
+3. Whenever
+
+   ```text
+   max - min == length - 1
+   ```
+
+   mark
+
+   ```text
+   good[min][max] = True
+   ```
+
+4. Try answers from `⌊n/2⌋` down to `1`.
+5. For every possible starting value `x`, check whether both intervals
+
+   ```text
+   [x, x+L-1]
+   [x+L, x+2L-1]
+   ```
+
+   exist. The first valid answer is the maximum one.
+
+### Complexity
+
+- **Time:** `O(n²)`
+- **Memory:** `O(n²)`
+
+### Implementation
+
+```python
+import sys
+
+input = sys.stdin.readline
+
+
+def solve():
+    n = int(input())
+    a = list(map(int, input().split()))
+
+    good = [[False] * (n + 2) for _ in range(n + 2)]
+
+    vis = [0] * (n + 1)
+    timer = 0
+
+    # Enumerate all good subarrays
+    for l in range(n):
+        timer += 1
+        mn = n + 1
+        mx = 0
+
+        for r in range(l, n):
+            x = a[r]
+
+            if vis[x] == timer:
+                break
+
+            vis[x] = timer
+
+            mn = min(mn, x)
+            mx = max(mx, x)
+
+            if mx - mn == r - l:
+                good[mn][mx] = True
+
+    # Try answers from largest to smallest
+    for length in range(n // 2, 0, -1):
+        for start in range(1, n - 2 * length + 2):
+            if (
+                good[start][start + length - 1]
+                and good[start + length][start + 2 * length - 1]
+            ):
+                print(length)
+                return
+
+    print(0)
+
+
+t = int(input())
+for _ in range(t):
+    solve()
+```
+
+### Key Takeaway
+
+My initial solution focused on matching good subarrays by their indices using a sweep-line algorithm. While that approach was logically appealing, it introduced unnecessary state and eventually ran into memory issues.
+
+The decisive observation is that **disjoint value intervals automatically imply disjoint subarrays**. Once that is recognized, the problem becomes much simpler: enumerate every good value interval once, record its existence, and directly check whether the two required consecutive intervals exist for each candidate answer.
