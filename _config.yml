@@ -32,6 +32,11 @@ future: true
 theme: minima
 plugins:
   - jekyll-feed
+  - jekyll-paginate
+
+# Pagination (jekyll-paginate requires index.html at the site root)
+paginate: 10
+paginate_path: "/page:num/"
 
 markdown: kramdown
 kramdown:

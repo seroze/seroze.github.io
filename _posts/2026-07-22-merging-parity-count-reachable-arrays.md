@@ -1,7 +1,7 @@
 ---
 layout: post
 title: "[Codechef] Starters 248 — Merging Parity"
-date: 2026-07-23 00:00:00 +0530
+date: 2026-07-22 00:00:00 +0530
 categories: competitive-programming
 tags: [competitive_programming, dynamic_programming, problem_solving]
 author: "Seroze"
