@@ -16,9 +16,10 @@ The owner posts daily learnings here (currently being resurrected as of June 202
 
 ```
 _posts/          # All blog posts (date-prefixed .md files)
-_layouts/        # Custom layouts (post.html has MathJax injected)
+_layouts/        # Custom layouts (post.html has MathJax injected, home.html has pagination)
 assets/images/   # Images used in posts
-_config.yml      # Jekyll config (theme, kramdown, permalink settings)
+_config.yml      # Jekyll config (theme, kramdown, permalink, pagination settings)
+index.html       # Homepage (must be .html, not .md — see Pagination)
 tags.html        # Tag listing page
 ```
 
@@ -57,6 +58,24 @@ kramdown:
 - MathJax in `_layouts/post.html` is configured to render those delimiters
 
 **Why single `$` breaks things:** kramdown treats `$` as a regular character and processes the content inside as markdown, escaping underscores and backslashes before MathJax ever sees it.
+
+## Pagination
+
+The homepage shows 10 posts per page using `jekyll-paginate` (v1, the only paginator GitHub Pages supports).
+
+**_config.yml:**
+```yaml
+plugins:
+  - jekyll-feed
+  - jekyll-paginate
+paginate: 10
+paginate_path: "/page:num/"
+```
+
+Moving parts:
+- The homepage **must be `index.html`** at the repo root — jekyll-paginate v1 silently ignores `index.md`/`index.markdown`. Don't rename it back.
+- `_layouts/home.html` overrides minima's home layout: it iterates `paginator.posts` (not `site.posts`) and renders Newer/Older nav links with a "Page X of Y" indicator.
+- Paginated pages land at `/page2/`, `/page3/`, etc. Page 1 is the root `/`.
 
 ## Post timestamps
 
