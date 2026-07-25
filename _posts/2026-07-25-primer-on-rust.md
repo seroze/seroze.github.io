@@ -423,3 +423,53 @@ for i in 0..input.len() { println!("{}", input[i]); }
 | Modify elements | `iter_mut()` |
 
 The iterator methods worth becoming fluent in early: `iter()`, `iter_mut()`, `into_iter()`, `enumerate()`, `map()`, `filter()`, `fold()`, `collect()`, `find()`, `any()`, `all()`, `max()`, `min()`. These form the core of idiomatic Rust and show up throughout production code.
+
+## What is `::`?
+
+Coming from C++, `::` looks like the scope resolution operator. Rust calls it the **path separator**, and it's used to navigate into modules, types, traits, and enums. Take a line you'll write constantly:
+
+```rust
+use std::io::{self, Write};
+
+io::stdout().flush()?;
+```
+
+There are two different operators at work in that one expression.
+
+**`::` goes through a namespace or a type.** `io::stdout()` means "the function `stdout` inside the module `io`." The full path is `std::io::stdout()`; the `use std::io;` import is what lets you shorten it.
+
+**`.` operates on a value you already have.** `io::stdout()` returns a `Stdout` value, and `.flush()` is a method called on that value. So the expression switches modes halfway through:
+
+```
+io::stdout()   ::  module → function
+    .flush()   .   value  → method
+```
+
+That's the whole mental model: **`::` starts from a namespace or type, `.` operates on a particular value.**
+
+### What can appear on the left of `::`
+
+| Left side | Example | Meaning |
+|---|---|---|
+| Module | `std::io::stdout()` | Function inside a module |
+| Type | `String::new()` | Associated function |
+| Type | `u32::MAX` | Associated constant |
+| Enum | `Option::Some(5)` | Enum variant |
+| Trait | `<Dog as Animal>::sound()` | Associated item via a trait |
+
+The type cases are the ones that surprise people. In `String::new()`, `String` is not a module — it's a type, and `new` is an **associated function** (Rust's equivalent of a static method). It uses `::` precisely because there's no `String` value to call it on yet:
+
+```rust
+let mut s = String::new();  // :: — no value exists yet
+s.push_str("hello");        // .  — operating on s
+```
+
+Generics slot into the path too. `Vec::<i32>::new()` has two `::`: one to pin the generic parameter, one to reach the associated function.
+
+Chaining the two operators is the pattern you'll see everywhere — start from a type or module, then work on the value it produces:
+
+```rust
+String::new()   // :: create a String
+    .trim()     // .  operate on it
+    .len();     // .  operate on the result
+```
