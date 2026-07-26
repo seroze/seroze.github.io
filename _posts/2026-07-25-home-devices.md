@@ -194,6 +194,23 @@ the 5080 mostly buys raw throughput rather than headroom for bigger models. Sinc
 binding constraint for the LLM side, the extra spend doesn't move the ceiling on what I can
 actually run.
 
+### The low-profile alternative
+
+There's a version of this build where the card goes *inside* the chassis instead of on the end of
+a cable, which means living within low-profile constraints. Two options worth knowing about:
+
+- **RTX 4000 Pro (24 GB), low profile** — genuinely decent, and 24 GB is more VRAM than either
+  card I'm actually planning to buy. The workstation tax is the catch: you pay a lot per unit of
+  throughput.
+- **RTX 5060 (8 GB)** — cheap and small, but 8 GB is the number that decides this. It puts a hard
+  ceiling on model size that no amount of quantization argues its way out of.
+
+Having looked at both, **I think it's better to buy a full-size GPU and link it externally over
+an MCIO cable.** The low-profile market makes you choose between paying workstation prices or
+accepting half the VRAM, and neither trade is one I want to make on a machine whose entire
+selling point is that it has x16 lanes to give away. The cable is uglier. It's also the only
+option here that doesn't cost me something I care about.
+
 The other half of that decision is to stop pretending the local box needs to do everything.
 **Anything that genuinely needs a big GPU, I'll rent.** Cloud GPU time is cheap compared to
 buying a card I'd use at full tilt a few days a year, and it means the local machine gets sized
