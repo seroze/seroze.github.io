@@ -473,3 +473,199 @@ String::new()   // :: create a String
     .trim()     // .  operate on it
     .len();     // .  operate on the result
 ```
+
+## Deref coercion
+
+Write enough Rust and you'll hit a moment where a function wants a `&str`, you have a `String`, and passing `&my_string` just... works. No conversion, no `.as_str()`. That's **deref coercion**, and it's worth understanding rather than treating as magic.
+
+```rust
+fn greet(name: &str) {
+    println!("hello, {name}");
+}
+
+let owned = String::from("world");
+greet(&owned);   // &String, but the function wants &str — this compiles
+```
+
+### A useful mental model
+
+Think of deref coercion as Rust saying:
+
+> "I expected a reference to type `B`, but you gave me a reference to type `A`. If `A` knows how to dereference into `B`, I'll do that automatically."
+
+The common conversions:
+
+```
+&String   ──►  &str
+&Vec<T>   ──►  &[T]
+&Box<T>   ──►  &T
+&Rc<T>    ──►  &T
+&Arc<T>   ──►  &T
+```
+
+No heap allocation or copying happens — it's simply adjusting the view of the existing data through references.
+
+### Why it matters in practice
+
+The payoff is on the API side. If you write a function that takes `&str` instead of `&String`, callers can hand you a `String`, a `&str`, or a string literal and all three work. Take the narrower type and you only accept one of them:
+
+```rust
+fn takes_str(s: &str)     { /* accepts &String, &str, and literals */ }
+fn takes_string(s: &String) { /* only accepts &String */ }
+```
+
+Same rule for slices: prefer `&[T]` over `&Vec<T>` in signatures, since `&Vec<T>` coerces to `&[T]` but not the reverse. This is why idiomatic Rust signatures are full of `&str` and `&[T]` — the borrowed view is strictly more general than the owned container.
+
+The coercion also fires on method calls, which is why `Box<T>` and `Rc<T>` feel transparent:
+
+```rust
+let boxed = Box::new(String::from("hi"));
+println!("{}", boxed.len());  // Box<String> → String, which has .len()
+```
+
+Rust keeps dereferencing until it finds a type that has the method. That chain is what makes smart pointers pleasant to use instead of a wall of `*` characters.
+
+One limit to keep in mind: coercion only goes in the direction `Deref` defines. `&String → &str` is free; going the other way costs an allocation and you have to ask for it explicitly with `.to_string()` or `.to_owned()`.
+
+## Error propagation and `?`
+
+Rust has no exceptions. A function that can fail returns `Result<T, E>` — either `Ok(value)` or `Err(error)` — and the caller has to deal with both arms. Done by hand, that gets verbose fast:
+
+```rust
+fn read_config() -> Result<String, io::Error> {
+    let contents = match fs::read_to_string("config.toml") {
+        Ok(c) => c,
+        Err(e) => return Err(e),
+    };
+    Ok(contents)
+}
+```
+
+The `?` operator collapses that `match` into one character:
+
+```rust
+fn read_config() -> Result<String, io::Error> {
+    let contents = fs::read_to_string("config.toml")?;
+    Ok(contents)
+}
+```
+
+### `?` and `Ok(...)` are inverses
+
+This is the part that clicks late for a lot of people. `Ok(...)` converts a successful value into a `Result`. The `?` operator does the opposite: it extracts the value from a `Result`, or returns the error early if there is one.
+
+A nice way to remember it:
+
+```
+?         :  Result<T, E>  →  T          (or early Err)
+Ok(...)   :  T             →  Result<T, E>
+```
+
+So in the function above, `?` unwraps on the way in and `Ok` re-wraps on the way out. That's why almost every fallible function ends with `Ok(something)` — the return type demands a `Result`, and you're handing back a plain value.
+
+Once you see the symmetry, the shape of everyday Rust makes sense:
+
+```rust
+fn parse_port() -> Result<u16, Box<dyn Error>> {
+    let raw = env::var("PORT")?;    // Result<String, VarError> → String
+    let port: u16 = raw.parse()?;   // Result<u16, ParseIntError> → u16
+    Ok(port)                        // u16 → Result<u16, _>
+}
+```
+
+Two different error types flow through that function, and neither is handled explicitly. `?` handles them by leaving.
+
+### Where `?` can be used
+
+`?` only works inside a function whose return type can absorb the early exit — a `Result`, an `Option`, or anything implementing `Try`. Put it in a function returning `()` and you get a compile error, which is the single most common first encounter with the operator:
+
+```rust
+fn main() {
+    let contents = fs::read_to_string("config.toml")?;
+}
+```
+
+```
+error[E0277]: the `?` operator can only be used in a function that returns
+              `Result` or `Option` (or another type that implements `FromResidual`)
+ --> src/main.rs:2:52
+  |
+1 | fn main() {
+  | --------- this function should return `Result` or `Option` to accept `?`
+2 |     let contents = fs::read_to_string("config.toml")?;
+  |                                                     ^ cannot use the `?` operator
+  |                                                       in a function that returns `()`
+```
+
+Read the error literally and it tells you the fix: `?` needs somewhere to return the `Err` *to*, and `()` has no room for one. The mention of `FromResidual` is the general version — `Result` and `Option` are just the two types in the standard library that implement it.
+
+So the fix is to widen `main`'s return type — `main` is allowed to return a `Result`:
+
+```rust
+fn main() -> Result<(), Box<dyn Error>> {
+    let contents = fs::read_to_string("config.toml")?;
+    println!("{contents}");
+    Ok(())
+}
+```
+
+Note the `Ok(())` at the end — the unit value wrapped in `Ok`, the same `T → Result<T, E>` move as before, just with nothing interesting inside.
+
+`?` works on `Option` too, with the same shape: it unwraps `Some(v)` to `v` and returns `None` early. What it can't do is mix the two — `?` on an `Option` inside a function returning `Result` won't compile. Convert explicitly with `.ok_or(...)` when you need to cross that boundary.
+
+### Converting error types
+
+The other thing `?` quietly does is call `From::from` on the error. If the function returns `Result<T, MyError>` and you `?` on something producing `io::Error`, it compiles as long as `MyError: From<io::Error>`:
+
+```rust
+impl From<io::Error> for MyError {
+    fn from(e: io::Error) -> Self {
+        MyError::Io(e)
+    }
+}
+```
+
+That single impl is what lets a function with one error type call into libraries with several. `Box<dyn Error>` is the low-ceremony version of the same trick — it accepts any error type, at the cost of losing the ability to match on which one you got. Fine for `main` and small tools; for a library, define a real error enum.
+
+### `?` vs. `unwrap()`
+
+People agonise over this one, but the rule is actually very simple:
+
+- Use **`?`** when you want to let the caller handle the error.
+- Use **`unwrap()`** when you're certain failure is impossible (or you deliberately want the program to crash).
+
+```rust
+// The caller decides what a missing file means.
+fn load(path: &str) -> Result<String, io::Error> {
+    let contents = fs::read_to_string(path)?;
+    Ok(contents)
+}
+
+// This regex is a literal I wrote myself; if it doesn't compile that's a bug,
+// not a runtime condition to recover from.
+let re = Regex::new(r"^\d+$").unwrap();
+```
+
+The dividing line is who has enough context to make a decision. A library function usually doesn't — it can't know whether a missing config file is fatal or expected — so it propagates with `?` and lets the caller choose. A crash, by contrast, is a claim: *this cannot fail, and if it does the program's assumptions are broken and continuing is worse than stopping.*
+
+Where `unwrap()` is genuinely fine:
+
+- Tests — a failed assumption should fail the test loudly.
+- Prototypes and one-off scripts, where error handling is noise.
+- Invariants you can prove hold, like parsing a hardcoded literal.
+
+Where it isn't: anything reading from the network, filesystem, or user. Those fail routinely and a panic just means the failure gets reported with a worse message.
+
+When you do reach for it, prefer **`expect("...")`** over bare `unwrap()`. Same behaviour, but the panic message says what you assumed instead of leaving a stack trace to decode:
+
+```rust
+let port = env::var("PORT").expect("PORT must be set");
+```
+
+| Want | Use |
+|---|---|
+| Propagate the error to the caller | `?` |
+| Handle both arms here | `match` |
+| Substitute a default on error | `.unwrap_or(default)` |
+| Crash on error (prototypes, tests) | `.unwrap()` / `.expect("msg")` |
+| Turn `Option` into `Result` | `.ok_or(err)` / `.ok_or_else(...)` |
