@@ -209,6 +209,26 @@ a cable, which means living within low-profile constraints. Two options worth kn
 wanted a local GPU that's fast enough for local testing and of decent size — and 24 GB is a
 perfect fit. It's also the highest VRAM you can get in a low-profile form factor.</strong></span>
 
+The catch is memory bandwidth. To fit a 70 W dual-slot card, NVIDIA cut the bus to 160-bit and
+went back to GDDR6 — so the 24 GB sits behind a much narrower pipe than the consumer Blackwell
+cards, which run 256-bit GDDR7 and land near 1 TB/s:
+
+| Card | Architecture | GPU Die | Memory Type | Bus Width | Speed | Bandwidth | CUDA Cores |
+|---|---|---|---|---|---|---|---|
+| RTX PRO 4000 SFF (low-profile, dual-slot) | Blackwell | GB203 | GDDR6 | 160-bit | ~14 Gbps* | 280 GB/s | 8,960 |
+| RTX 5070 Ti | Blackwell | GB203 | GDDR7 | 256-bit | 28 Gbps | 896 GB/s | 8,960 |
+| RTX 5080 | Blackwell | GB203 | GDDR7 | 256-bit | 30 Gbps | 960 GB/s | 10,752 |
+| RTX 5090 | Blackwell | GB202 | GDDR7 | 512-bit | 28 Gbps | 1,792 GB/s | 21,760 |
+| RTX PRO 6000 Blackwell | Blackwell | GB202 | GDDR7 (ECC) | 512-bit | 28 Gbps | 1,792 GB/s | 24,064 |
+
+<small>* Effective per-pin rate implied by the 280 GB/s figure on a 160-bit bus.</small>
+
+Look at the first two rows together: **same die, same CUDA core count, and the low-profile card
+still has barely a third of the memory bandwidth.** For LLM inference that matters more than it
+looks, because token generation is memory-bound — you stream the whole weight set per token, so
+throughput tracks bandwidth far more closely than it tracks FLOPS. The 4000 SFF lets me *load* a
+bigger model; it doesn't let me run it fast.
+
 Having looked at both, **I think it's better to buy a full-size GPU and link it externally over
 an MCIO cable.** The low-profile market makes you choose between paying workstation prices or
 accepting half the VRAM, and neither trade is one I want to make on a machine whose entire
