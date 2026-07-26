@@ -199,13 +199,14 @@ actually run.
 There's a version of this build where the card goes *inside* the chassis instead of on the end of
 a cable, which means living within low-profile constraints. Two options worth knowing about:
 
-- **RTX 4000 Pro (24 GB), low profile** — genuinely decent, and 24 GB is more VRAM than either
-  card I'm actually planning to buy. The workstation tax is the catch: you pay a lot per unit of
-  throughput.
-- **RTX 5060 (8 GB)** — cheap and small, but 8 GB is the number that decides this. It puts a hard
-  ceiling on model size that no amount of quantization argues its way out of.
+- **RTX PRO 4000 SFF (small form factor, 24 GB)** — genuinely decent, and 24 GB is more VRAM than
+  either card I'm actually planning to buy. The workstation tax is the catch: you pay a lot per
+  unit of throughput.
+- **RTX 5060 SFF (small form factor, 8 GB)** — cheap and small, but 8 GB is the number that
+  decides this. It puts a hard ceiling on model size that no amount of quantization argues its
+  way out of.
 
-<span style="color: #1a56db;"><strong>Worth noting: the RTX 4000 Pro is a Blackwell card, which suits my needs almost perfectly. I
+<span style="color: #1a56db;"><strong>Worth noting: the RTX PRO 4000 SFF is a Blackwell card, which suits my needs almost perfectly. I
 wanted a local GPU that's fast enough for local testing and of decent size — and 24 GB is a
 perfect fit. It's also the highest VRAM you can get in a low-profile form factor.</strong></span>
 
