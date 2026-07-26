@@ -106,6 +106,7 @@ uplink** — same tiered idea, same shared-uplink bottleneck.
 The build guide I'm following for the MS-02 eGPU connection:
 
 - [MS-02 Ultra eGPU build walkthrough](https://www.youtube.com/watch?v=xDT39oCfCBo)
+- [Full assembly guide](https://www.youtube.com/watch?v=Oiz8RZQSr9c) — start to finish
 - [r/MiniPCs — MS-02 Ultra with full-height cards](https://www.reddit.com/r/MiniPCs/comments/1t1jjrx/minisforum_ms02_ultra_full_height_cards/) — people actually running full-size GPUs off this box
 
 No illusions about what this looks like when it's done: it'll probably be an **open-shell
