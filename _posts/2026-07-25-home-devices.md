@@ -14,22 +14,36 @@ published: true
 
 ## The plan
 
-After a lot of back and forth, I've landed on the **Minisforum MS-A2**.
+After lots and lots of consideration, I've settled on the **MS-02 Ultra** platform.
 
-I spent a while leaning towards the **AI X1 Pro 470**, mostly on performance-per-dollar grounds.
-What changed my mind is the chip. The MS-A2 carries the stronger CPU, and more importantly it's
-the one that **ages gracefully** — the X1 Pro is built around an NPU-heavy story that I don't
-expect to hold its value as a general-purpose machine, while the MS-A2 is just a lot of fast
-cores that will still be a lot of fast cores in four years. For a box that's going to compile
-things, run containers, and sit under long experiments, that's the property I actually want.
+The route here was not short. I started out leaning towards the **AI X1 Pro 470** on
+performance-per-dollar grounds, then moved to the **MS-A2** for the stronger, more
+gracefully-ageing CPU. What pulled me to the MS-02 in the end is the I/O, and specifically one
+number: it exposes **PCIe 5.0 x16 lanes**.
 
-The other thing the MS-A2 gets me is a real **PCIe x16 slot**. That turns the eGPU question into
-a much simpler one: drop in a **PCIe-to-OCuLink adapter**, run the cable out to a dock, and
-attach the card. No Thunderbolt tax, no bundled-PSU compromise.
+That changes the whole shape of the build. With a **Gen5 MCIO riser card** I can connect an
+external GPU **at its native bandwidth** — not a x4 link with a card hanging off the end of it,
+but the same lane count and generation the card would get sitting in a desktop motherboard.
+This is so cool. The usual mini-PC eGPU compromise just... isn't there.
+
+Minisforum publish the platform documentation openly, including the lane block diagram:
+
+- [minisforum-docs/MS-02-Ultra](https://github.com/minisforum-docs/MS-02-Ultra)
+
+Worth reading properly rather than skimming. It lays out exactly which lanes come off the CPU
+and which come off the chipset, and it still talks in **northbridge / southbridge** terms — which
+is a lovely thing to see written down in 2026, and makes the topology much easier to reason
+about when you're deciding what to plug where.
+
+On CPU, it comes down to budget: either the **235HX** or the **285HX** from the Core Ultra HX
+line. Both give me the x16 slot, which was the point of the exercise; the 285HX gives more cores
+on top. One difference worth catching before ordering — per the block diagram, the **Intel E810
+25GbE NIC is on the 285HX version only**, hanging off CPU-direct lanes. If that matters to you,
+it's not a budget call any more.
 
 The nice part about a mini PC + eGPU setup is that the two halves upgrade independently. The
-compute box stays the same while the GPU on the other end of the OCuLink cable can be swapped
-whenever something better (or cheaper) shows up.
+compute box stays the same while the GPU on the other end of the cable can be swapped whenever
+something better (or cheaper) shows up.
 
 One thing to go in with eyes open about: Minisforum typically ships around **two BIOS updates**
 for a machine and then stops. After that there's no further firmware support, so if something
@@ -39,30 +53,87 @@ tier-one OEM with a long support tail. Worth knowing before, not after.
 
 ---
 
-## OCuLink
+## Reading the block diagram
 
-The adapter route is well-trodden at this point. The walkthrough I'm following for the install is
-this one:
+![MS-02 Ultra block diagram]({{ site.baseurl }}/assets/images/ms-02-ultra-block-diagram.png)
 
-- [OCuLink eGPU install walkthrough](https://www.youtube.com/watch?v=61NyYB4ru90&t=603s)
+*Source: [minisforum-docs/MS-02-Ultra](https://github.com/minisforum-docs/MS-02-Ultra).*
 
-**OCuLink is fine for now.** It gives PCIe 4.0 x4 to the card, well short of what a desktop x16
-slot delivers, but for inference and kernel work the link isn't where I'll be losing time — and
-it costs a fraction of a Thunderbolt 5 enclosure. If bandwidth ever actually becomes the
-binding constraint, that's a problem worth paying to solve later.
+This is the thing that sold me, so it's worth walking through.
+
+The bottom block is the **PCH — Platform Controller Hub**. It's a second chip on the motherboard
+that sits next to the CPU and handles all the slower I/O so the CPU doesn't have to. Think of the
+architecture as two tiers.
+
+**The CPU** (Arrow Lake-HX, the top block) has a limited number of PCIe lanes coming directly out
+of its silicon. Those are precious — lowest latency, full bandwidth, no sharing. So they're spent
+only on things that genuinely need them: the **x16 GPU slot**, one fast NVMe, the 25GbE NIC,
+memory, and Thunderbolt.
+
+**The PCH** (the bottom block) is essentially an I/O expander chip. It fans out into many more
+connections — extra PCIe 4.0 lanes for more NVMe slots and the secondary PCIe slot, the 10GbE and
+2.5GbE ethernet controllers, WiFi, all the USB ports, SATA if present, audio, and so on.
+Physically it's that second large chip you'd see on the board under a small heatsink.
+
+### The catch: DMI
+
+The catch is how the PCH talks to the CPU: through a single link called **DMI (Direct Media
+Interface)** — that double-arrow in the middle of the diagram. On this platform it's **DMI 4.0
+x8**, which is electrically just a PCIe 4.0 x8 connection, **≈ 16 GB/s each way**. Every device
+attached to the PCH — the PCH-side NVMe slots, both ethernet controllers, the USB4 v2 chip, every
+USB port — funnels through that one pipe to reach the CPU and RAM.
+
+So "hanging off that shared 16 GB/s" means: individually, each PCH device still gets its stated
+bandwidth (a Gen4 x4 NVMe does its ~7 GB/s just fine), but **collectively they can't exceed
+16 GB/s at the same moment**. Two fast NVMe drives copying to each other, plus 10GbE traffic,
+plus USB storage all at once will start contending — while the GPU on the CPU-direct x16 slot is
+completely unaffected.
+
+That last clause is the whole reason I'm here. The GPU doesn't share with anything.
+
+### Historical footnote
+
+Since I like OS internals: the PCH is the descendant of the old **northbridge/southbridge** pair.
+The northbridge (memory controller, PCIe/AGP) got absorbed into the CPU die around **Nehalem
+(2008)**; the southbridge survived as this standalone chip, renamed PCH. AMD's equivalent is just
+called the "chipset" (X870, B650…), connected by an analogous link they call the **chipset
+uplink** — same tiered idea, same shared-uplink bottleneck.
 
 ---
 
-## Thermals
+## Connecting the GPU
 
-The one recurring complaint about the MS-A2 is that it runs hot — the 9955HX will happily sit at
-uncomfortable temperatures out of the box. Reddit consensus is that this is fixable, and the fix
-is documented here:
+The build guide I'm following for the MS-02 eGPU connection:
 
-- [Minisforum MS-A2 9955HX temperature fix](https://etcwiki.org/wiki/Minisforum_MS-A2_9955HX_temperature_fix)
+- [MS-02 Ultra eGPU build walkthrough](https://www.youtube.com/watch?v=xDT39oCfCBo)
 
-Planning to apply this early rather than after living with a loud, throttling machine for a
-month.
+No illusions about what this looks like when it's done: it'll probably be an **open-shell
+setup** — the GPU sitting out on a bench or a frame with the riser cable running back into the
+mini PC, rather than anything that resembles a tidy appliance. That's the cost of native
+bandwidth on a machine this size. I'm fine with it; the thing lives on a desk next to me, not in
+a living room.
+
+For comparison, the OCuLink route I was previously planning gives PCIe 4.0 x4 — genuinely fine
+for inference and kernel work, and a fraction of the hassle:
+
+- [OCuLink eGPU install walkthrough](https://www.youtube.com/watch?v=61NyYB4ru90&t=603s)
+
+But once the platform hands you Gen5 x16 for the price of a riser, taking the x4 link starts to
+feel like paying for a capability and then declining to use it.
+
+---
+
+## The clean version of this idea
+
+While researching, I found that some machines solve this properly by exposing the lanes as an
+**external MCIO 8i port** — no riser card threaded out through a chassis opening, just a port on
+the back panel that a cable plugs into. The [GPD Box](https://gpdstore.net/gpd-box/) is what made
+this click for me; that whole approach is built around an MCIO 8i cable rather than fishing a
+riser out through a gap in the case.
+
+That's clearly where this form factor is heading, and it's what I'd want if I were buying purely
+on elegance. The MS-02 route gets me the same bandwidth today with an uglier cable path, which
+is the trade I'm making.
 
 ---
 
@@ -70,7 +141,8 @@ month.
 
 This is where the cost math works out. I already have lying around:
 
-- **2 × 16 GB SODIMM laptop RAM** — 32 GB total, and SODIMM is the form factor the MS-A2 takes.
+- **2 × 16 GB SODIMM laptop RAM** — 32 GB total, and SODIMM is the form factor the MS-02 takes.
+  It has four slots, so there's room to double this later without throwing anything away.
 - **1 TB SN-series Gen4 NVMe drive** — fast enough that I won't be waiting on disk when loading
   model weights.
 
@@ -105,5 +177,5 @@ buying a card I'd use at full tilt a few days a year, and it means the local mac
 for the thing it's actually good at — fast iteration, always-on, no per-hour meter running while
 I stare at a profiler. Local for the loop, cloud for the long runs.
 
-That's the whole build. MS-A2 barebones, my existing RAM and SSD, a PCIe-to-OCuLink adapter out
-to one refurb card, and a cloud bill for anything that doesn't fit.
+That's the whole build. MS-02 Ultra barebones, my existing RAM and SSD, a Gen5 MCIO riser out to
+one refurb card running at full x16, and a cloud bill for anything that doesn't fit.
