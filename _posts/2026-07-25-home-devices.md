@@ -121,6 +121,29 @@ for inference and kernel work, and a fraction of the hassle:
 But once the platform hands you Gen5 x16 for the price of a riser, taking the x4 link starts to
 feel like paying for a capability and then declining to use it.
 
+### How the interconnects actually compare
+
+It's easy to lose track of which of these cables is fast, so here they are side by side:
+
+![Bandwidth comparison across MCIO, OCuLink, Thunderbolt 5, Thunderbolt 4 and USB4 v2]({{ site.baseurl }}/assets/images/interconnect-bandwidth-comparison.png)
+
+The ordering is the point. MCIO is in a different class entirely — it's the only one here that
+carries a full x16 link, which is exactly why it's the server and AI-accelerator interconnect
+rather than a laptop dock standard. Everything to the right of it is a x4-or-narrower tunnel
+wearing different branding.
+
+Two things to keep in mind when reading those numbers:
+
+- **The peak-bandwidth row is raw link rate, not usable PCIe throughput.** Thunderbolt 5 markets
+  120 Gbps, but its actual PCIe tunnel is 64 Gbps (Gen4) — the rest is display bandwidth. USB4 v2
+  is worse to reason about, since how much PCIe you get "varies by OEM."
+- **The MCIO figure assumes PCIe 6.0.** That column covers PCIe 5 *and* 6, and ~256 GB/s is a
+  Gen6 x16 bidirectional number. On this build — Gen5 x16 — the real figure is closer to
+  **~63 GB/s per direction**, which is still roughly eight times what OCuLink gives me and about
+  four times a Thunderbolt 5 PCIe tunnel.
+
+Even after deflating the headline number, the gap is the whole argument for going this route.
+
 ---
 
 ## The clean version of this idea
