@@ -205,6 +205,10 @@ a cable, which means living within low-profile constraints. Two options worth kn
 - **RTX 5060 (8 GB)** — cheap and small, but 8 GB is the number that decides this. It puts a hard
   ceiling on model size that no amount of quantization argues its way out of.
 
+<span style="color: #1a56db;"><strong>Worth noting: the RTX 4000 Pro is a Blackwell card, which suits my needs almost perfectly. I
+wanted a local GPU that's fast enough for local testing and of decent size — and 24 GB is a
+perfect fit. It's also the highest VRAM you can get in a low-profile form factor.</strong></span>
+
 Having looked at both, **I think it's better to buy a full-size GPU and link it externally over
 an MCIO cable.** The low-profile market makes you choose between paying workstation prices or
 accepting half the VRAM, and neither trade is one I want to make on a machine whose entire
