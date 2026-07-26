@@ -14,18 +14,21 @@ published: true
 
 ## The plan
 
-I'm planning to get a **Minisforum AI X1 Pro 470** and pair it with an eGPU docking station, so I
-can attach a discrete GPU over the external link instead of being stuck with whatever the box has
-onboard.
+After a lot of back and forth, I've landed on the **Minisforum MS-A2**.
 
-I did look hard at the **MS-02 Ultra**. It has the slightly better CPU and it's the more
-future-proof machine on paper — four SODIMM slots, more PCIe, more networking. But the X1 Pro
-offers **better performance per dollar**, and being honest with myself, I probably don't actually
-need what the MS-02 adds. Buying headroom I never grow into is just a more expensive way of
-owning the same machine.
+I spent a while leaning towards the **AI X1 Pro 470**, mostly on performance-per-dollar grounds.
+What changed my mind is the chip. The MS-A2 carries the stronger CPU, and more importantly it's
+the one that **ages gracefully** — the X1 Pro is built around an NPU-heavy story that I don't
+expect to hold its value as a general-purpose machine, while the MS-A2 is just a lot of fast
+cores that will still be a lot of fast cores in four years. For a box that's going to compile
+things, run containers, and sit under long experiments, that's the property I actually want.
 
-The nice part about a mini PC + eGPU dock combination is that the two halves upgrade
-independently. The compute box stays the same while the GPU in the dock can be swapped
+The other thing the MS-A2 gets me is a real **PCIe x16 slot**. That turns the eGPU question into
+a much simpler one: drop in a **PCIe-to-OCuLink adapter**, run the cable out to a dock, and
+attach the card. No Thunderbolt tax, no bundled-PSU compromise.
+
+The nice part about a mini PC + eGPU setup is that the two halves upgrade independently. The
+compute box stays the same while the GPU on the other end of the OCuLink cable can be swapped
 whenever something better (or cheaper) shows up.
 
 One thing to go in with eyes open about: Minisforum typically ships around **two BIOS updates**
@@ -36,22 +39,30 @@ tier-one OEM with a long support tail. Worth knowing before, not after.
 
 ---
 
-## Picking the dock
+## OCuLink
 
-My first thought was the **AGO3**, but there's a catch: its built-in power supply reportedly has
-noise in it, and the common recommendation is to bring your own high-quality PSU instead. Which
-raises the obvious question — if I'm going to supply my own power anyway, why pay for a bundled
-PSU I don't want?
+The adapter route is well-trodden at this point. The walkthrough I'm following for the install is
+this one:
 
-An 850W power supply costs around $100 USD. So the better move is a plain **non-PSU enclosure**
-paired with a good PSU of my choosing. Candidates in that space include the **Minisforum DEG2**
-and the **Aoostar EOG2**, both of which bring **Thunderbolt 5** support.
+- [OCuLink eGPU install walkthrough](https://www.youtube.com/watch?v=61NyYB4ru90&t=603s)
 
-But thinking about it more, I'm going with the **Minisforum DEG1**. **OCuLink is fine for now**
-and the DEG1 is sufficient for my use case — it's not worth putting that much investment into
-keeping a GPU around. The cheaper dock gets me the same experiments at a fraction of the spend,
-and if bandwidth ever actually becomes the limiting factor, that's a problem worth paying to
-solve later.
+**OCuLink is fine for now.** It gives PCIe 4.0 x4 to the card, well short of what a desktop x16
+slot delivers, but for inference and kernel work the link isn't where I'll be losing time — and
+it costs a fraction of a Thunderbolt 5 enclosure. If bandwidth ever actually becomes the
+binding constraint, that's a problem worth paying to solve later.
+
+---
+
+## Thermals
+
+The one recurring complaint about the MS-A2 is that it runs hot — the 9955HX will happily sit at
+uncomfortable temperatures out of the box. Reddit consensus is that this is fixable, and the fix
+is documented here:
+
+- [Minisforum MS-A2 9955HX temperature fix](https://etcwiki.org/wiki/Minisforum_MS-A2_9955HX_temperature_fix)
+
+Planning to apply this early rather than after living with a loud, throttling machine for a
+month.
 
 ---
 
@@ -59,7 +70,7 @@ solve later.
 
 This is where the cost math works out. I already have lying around:
 
-- **2 × 16 GB SODIMM laptop RAM** — 32 GB total, and SODIMM is the form factor the X1 Pro takes.
+- **2 × 16 GB SODIMM laptop RAM** — 32 GB total, and SODIMM is the form factor the MS-A2 takes.
 - **1 TB SN-series Gen4 NVMe drive** — fast enough that I won't be waiting on disk when loading
   model weights.
 
@@ -77,15 +88,22 @@ The last piece is the card itself. What I want it for:
 - CUDA experiments: writing kernels, profiling, understanding what the hardware actually does.
 - Small-scale training and fine-tuning runs.
 
-The plan is to pick up a **refurbished 5070 Ti or 5080** and ship it in from the US. Refurbished
-is where the value is — buying new at local retail prices would cost more than the rest of the
-build put together, and for workloads that are mostly about learning rather than uptime, a
-refurb card is a perfectly reasonable risk.
+The plan is to pick up a **refurbished 5070 Ti or 5080** and ship it in from the US, and **nothing
+above that**. Given where GPU prices are right now, the next rung up costs more than the entire
+rest of the build and I'd still be VRAM-limited for anything genuinely large. Refurbished is
+where the value is — for workloads that are mostly about learning rather than uptime, a refurb
+card is a perfectly reasonable risk.
 
 Between the two, the **5070 Ti** is the better buy on paper: both cards land at 16 GB of VRAM, so
 the 5080 mostly buys raw throughput rather than headroom for bigger models. Since VRAM is the
 binding constraint for the LLM side, the extra spend doesn't move the ceiling on what I can
 actually run.
 
-That's the whole build. Barebones mini PC, my existing RAM and SSD, a cheap OCuLink dock, and one
-refurb card doing the heavy lifting.
+The other half of that decision is to stop pretending the local box needs to do everything.
+**Anything that genuinely needs a big GPU, I'll rent.** Cloud GPU time is cheap compared to
+buying a card I'd use at full tilt a few days a year, and it means the local machine gets sized
+for the thing it's actually good at — fast iteration, always-on, no per-hour meter running while
+I stare at a profiler. Local for the loop, cloud for the long runs.
+
+That's the whole build. MS-A2 barebones, my existing RAM and SSD, a PCIe-to-OCuLink adapter out
+to one refurb card, and a cloud bill for anything that doesn't fit.
