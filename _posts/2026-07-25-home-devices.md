@@ -247,5 +247,30 @@ buying a card I'd use at full tilt a few days a year, and it means the local mac
 for the thing it's actually good at — fast iteration, always-on, no per-hour meter running while
 I stare at a profiler. Local for the loop, cloud for the long runs.
 
+---
+
+## What about an MS-03 Ultra?
+
+The obvious question when you're about to buy a machine like this is whether to wait for the next
+one. There's [a comment thread on r/MINISFORUM](https://www.reddit.com/r/MINISFORUM/comments/1teuvly/comment/om5yv63/)
+with some discussion of what a follow-up might look like.
+
+If Minisforum ships an MS-03 Ultra, the likely shape of it is a newer HX-class CPU, PCIe 5.0
+pushed further down the board rather than only on the GPU slot, faster DMI so the PCH tier stops
+being the bottleneck I described above, and probably more of the 25GbE-and-up networking.
+
+One thing I'd bet on: **it won't be Panther Lake.** Panther Lake doesn't expose a PCIe 5.0 x16
+link, and x16 off the CPU is the entire reason this platform is interesting to me. A mini PC
+built on it would be a nice laptop chip in a small box — not a machine I can hang a full-size GPU
+off at native bandwidth. Whatever the MS-03 turns out to be, it has to come from a line that
+still does wide CPU-attached lanes, or it isn't a successor to this thing in any way I care
+about.
+
+But this is all speculation about a product that doesn't exist, and the timeline almost certainly
+lands well past when I actually want to be running things. **So I'm buying the MS-02 Ultra
+anyway.** Waiting for unannounced hardware is how you spend a year not learning anything.
+
+---
+
 That's the whole build. MS-02 Ultra barebones, my existing RAM and SSD, a Gen5 MCIO riser out to
 one refurb card running at full x16, and a cloud bill for anything that doesn't fit.
