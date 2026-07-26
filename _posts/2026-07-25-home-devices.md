@@ -109,6 +109,9 @@ The build guide I'm following for the MS-02 eGPU connection:
 - [Full assembly guide](https://www.youtube.com/watch?v=Oiz8RZQSr9c) — start to finish
 - [r/MiniPCs — MS-02 Ultra with full-height cards](https://www.reddit.com/r/MiniPCs/comments/1t1jjrx/minisforum_ms02_ultra_full_height_cards/) — people actually running full-size GPUs off this box
 
+If you have doubts about any of this, [u/egnegn1](https://www.reddit.com/user/egnegn1/) has been
+the most helpful person I've come across on this build — worth reaching out.
+
 No illusions about what this looks like when it's done: it'll probably be an **open-shell
 setup** — the GPU sitting out on a bench or a frame with the riser cable running back into the
 mini PC, rather than anything that resembles a tidy appliance. That's the cost of native
