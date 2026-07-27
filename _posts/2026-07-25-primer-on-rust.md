@@ -80,6 +80,8 @@ cargo fmt     # auto-format code
 cargo clippy  # lint for common mistakes and non-idiomatic patterns
 ```
 
+Imagine you're writing an essay. `cargo fmt` is like a teacher fixing your indentation, spacing, and punctuation so the essay looks neat. `cargo clippy` is like an editor saying, "This sentence is awkward," "You repeated yourself," or "There's a simpler way to say this."
+
 ### Package names can't start with a digit
 
 `cargo init` picks the current directory name as the package name by default. If that name starts with a digit, Cargo refuses to create the package:
