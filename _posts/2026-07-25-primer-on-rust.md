@@ -10,6 +10,12 @@ published: true
 
 *A running collection of Rust concepts worth knowing cold.*
 
+## Contents
+{:.no_toc}
+
+* TOC placeholder — replaced by kramdown
+{:toc}
+
 ## Cargo
 
 Cargo is Rust's build tool and package manager. It handles compiling your code, downloading and managing dependencies (crates), running tests, and publishing packages — all through one CLI.
@@ -423,6 +429,210 @@ for i in 0..input.len() { println!("{}", input[i]); }
 | Modify elements | `iter_mut()` |
 
 The iterator methods worth becoming fluent in early: `iter()`, `iter_mut()`, `into_iter()`, `enumerate()`, `map()`, `filter()`, `fold()`, `collect()`, `find()`, `any()`, `all()`, `max()`, `min()`. These form the core of idiomatic Rust and show up throughout production code.
+
+## Arrays, slices, and `Vec`
+
+Most languages give you one list type. Rust gives you three, and the distinction between them is the first place ownership becomes concrete rather than theoretical.
+
+| Type | Written | Size | Lives on | Owns its data? |
+|---|---|---|---|---|
+| Array | `[T; N]` | Fixed at compile time | Stack | Yes |
+| Vector | `Vec<T>` | Grows at runtime | Heap | Yes |
+| Slice | `&[T]` / `&mut [T]` | Known at runtime | Borrowed view | No |
+
+```rust
+let arr: [i32; 4] = [1, 2, 3, 4];   // length is part of the type
+let vec: Vec<i32> = vec![1, 2, 3];  // can push/pop
+let sl:  &[i32]   = &arr[1..3];     // a window into arr — [2, 3]
+```
+
+The length being *part of the type* is the key thing about arrays. `[i32; 3]` and `[i32; 4]` are different types, so a function taking `[i32; 3]` will not accept a four-element array. That's why arrays are rare in function signatures and slices are everywhere.
+
+### The slice is the unifying view
+
+A slice is a fat pointer: a pointer to some elements plus a length. It doesn't care whether those elements came from an array, a `Vec`, or another slice — which makes `&[T]` the type you want in signatures:
+
+```rust
+fn sum(xs: &[i32]) -> i32 {
+    xs.iter().sum()
+}
+
+let arr = [1, 2, 3];
+let vec = vec![4, 5, 6];
+
+sum(&arr);        // &[i32; 3] → &[i32]
+sum(&vec);        // &Vec<i32> → &[i32]
+sum(&vec[1..]);   // already a slice
+```
+
+All three calls work because of deref coercion (covered below). The practical rule: **take `&[T]`, return `Vec<T>`.** Borrow the most general thing you can, hand back the thing you own.
+
+Almost every method in this section is actually defined on `[T]` — the slice type — and `Vec<T>` and arrays inherit them by deref. That's why `vec.sort()` and `arr.sort()` and `slice.sort()` are all the same function.
+
+### Creating them
+
+```rust
+let a = [0; 10];                       // ten zeros, [i32; 10]
+let v = vec![0; 10];                   // ten zeros, Vec<i32>
+let v = Vec::new();                    // empty, type inferred from later use
+let v = Vec::with_capacity(1000);      // empty but pre-allocated
+let v: Vec<i32> = (1..=5).collect();   // from an iterator
+let v = "a b c".split(' ').collect::<Vec<_>>();
+```
+
+`with_capacity` matters more than it looks. A `Vec` that outgrows its buffer allocates a new one (typically double) and copies everything across. Amortised that's O(1) per push, but if you know the final size, saying so up front avoids the copies entirely.
+
+### Reading elements
+
+```rust
+let v = vec![10, 20, 30];
+
+v[0]              // 10 — panics if out of bounds
+v.get(0)          // Some(&10)
+v.get(99)         // None — the non-panicking version
+v.first()         // Some(&10)
+v.last()          // Some(&30)
+v.len()           // 3
+v.is_empty()      // false
+v.contains(&20)   // true
+```
+
+Indexing with `[]` panics on an out-of-bounds access; `.get()` returns an `Option`. Use `[]` when an out-of-range index means your logic is broken, `.get()` when the index came from outside your control.
+
+### Growing and shrinking (`Vec` only)
+
+These need ownership and a resizable buffer, so they exist on `Vec` but not on slices or arrays:
+
+```rust
+let mut v = vec![1, 2, 3];
+
+v.push(4);              // [1, 2, 3, 4]
+v.pop();                // Some(4), leaves [1, 2, 3]
+v.insert(1, 99);        // [1, 99, 2, 3] — O(n), shifts everything right
+v.remove(1);            // returns 99, [1, 2, 3] — O(n)
+v.swap_remove(0);       // returns 1, O(1) but does not preserve order
+v.extend([7, 8]);       // append an iterator's items
+v.append(&mut other);   // move all of other's items in, emptying it
+v.truncate(2);          // keep the first 2
+v.clear();              // empty it, keeping the allocation
+v.retain(|&x| x % 2 == 0);   // keep only elements matching a predicate
+v.drain(1..3);          // remove a range, yielding the removed items
+```
+
+`swap_remove` is the one worth remembering: `remove` shifts every later element left, but `swap_remove` just moves the last element into the hole. If you don't care about order, it turns an O(n) removal into O(1).
+
+`retain` is the idiomatic filter-in-place. Reaching for `v = v.into_iter().filter(...).collect()` does the same thing with an extra allocation.
+
+### Sorting and searching
+
+```rust
+let mut v = vec![3, 1, 2];
+
+v.sort();                              // ascending, stable
+v.sort_unstable();                     // faster, no stability guarantee
+v.sort_by(|a, b| b.cmp(a));            // descending
+v.sort_by_key(|s| s.len());            // sort by a derived key
+v.reverse();                           // in place
+
+v.binary_search(&2);                   // Ok(idx) or Err(insert_position)
+v.iter().position(|&x| x == 2);        // Some(idx) — linear scan
+v.iter().find(|&&x| x > 1);            // Some(&value)
+```
+
+Two things trip people up here. First, `sort` needs `Ord`, which floats don't implement — for `f64` you need `sort_by(|a, b| a.partial_cmp(b).unwrap())` or `total_cmp`. Second, `binary_search` returns a `Result` where the `Err` carries the index the element *would* go at, which is exactly what you want for an insertion:
+
+```rust
+let pos = v.binary_search(&x).unwrap_or_else(|e| e);
+v.insert(pos, x);
+```
+
+Use `sort_unstable` by default for primitives — it's faster and stability rarely matters. Use `sort` when equal elements have distinguishable identity you want preserved.
+
+### Deduplication
+
+```rust
+let mut v = vec![1, 1, 2, 2, 3, 1];
+v.dedup();          // [1, 2, 3, 1] — only removes *consecutive* duplicates
+v.sort();
+v.dedup();          // [1, 2, 3] — sort first for true dedup
+```
+
+### Slicing and splitting
+
+```rust
+let v = vec![1, 2, 3, 4, 5];
+
+&v[1..3]            // [2, 3]
+&v[..2]             // [1, 2]
+&v[3..]             // [4, 5]
+
+v.split_at(2);      // ([1, 2], [3, 4, 5])
+v.chunks(2);        // [1,2], [3,4], [5] — non-overlapping
+v.windows(2);       // [1,2], [2,3], [3,4], [4,5] — overlapping
+v.split_first();    // Some((&1, &[2, 3, 4, 5]))
+v.concat();         // flatten a Vec<Vec<T>> or Vec<&str>
+```
+
+`windows` is the one to reach for whenever you're comparing adjacent pairs — checking whether a sequence is sorted, computing differences, and so on:
+
+```rust
+let sorted = v.windows(2).all(|w| w[0] <= w[1]);
+```
+
+Note that `windows` and `chunks` exist on slices, so they work on arrays and `Vec`s alike.
+
+### Mutating in place
+
+```rust
+let mut v = vec![1, 2, 3];
+
+v.swap(0, 2);                    // [3, 2, 1]
+v.fill(0);                       // [0, 0, 0]
+v.rotate_left(1);                // shift elements left, wrapping
+for x in v.iter_mut() { *x *= 2; }
+```
+
+### Conversions
+
+```rust
+let v: Vec<i32> = arr.to_vec();          // array/slice → owned Vec
+let s: &[i32]   = v.as_slice();          // Vec → slice (usually implicit)
+let a: [i32; 3] = v.try_into().unwrap(); // Vec → array, fails if length differs
+let joined = ["a", "b"].join("-");       // "a-b"
+```
+
+### 2D vectors
+
+There's no dedicated matrix type in the standard library. The usual idiom is a `Vec` of `Vec`s:
+
+```rust
+let mut grid = vec![vec![0; cols]; rows];
+grid[r][c] = 1;
+```
+
+That's `rows` separate heap allocations. For anything performance-sensitive, a flat `Vec` with manual indexing is meaningfully faster since it's one allocation and one contiguous cache-friendly block:
+
+```rust
+let mut grid = vec![0; rows * cols];
+grid[r * cols + c] = 1;
+```
+
+### Quick reference
+
+| Task | Method |
+|---|---|
+| Add to end / remove from end | `push()` / `pop()` |
+| Remove by index, keep order | `remove(i)` — O(n) |
+| Remove by index, order irrelevant | `swap_remove(i)` — O(1) |
+| Safe indexed access | `get(i)` → `Option<&T>` |
+| Filter in place | `retain(\|x\| ...)` |
+| Sort | `sort_unstable()` / `sort_by_key()` |
+| Remove duplicates | `sort()` then `dedup()` |
+| Search a sorted slice | `binary_search()` |
+| Search an unsorted slice | `iter().position()` |
+| Compare adjacent elements | `windows(2)` |
+| Fixed-size batches | `chunks(n)` |
+| Build from an iterator | `collect()` |
 
 ## What is `::`?
 
