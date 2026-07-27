@@ -881,3 +881,95 @@ let port = env::var("PORT").expect("PORT must be set");
 | Substitute a default on error | `.unwrap_or(default)` |
 | Crash on error (prototypes, tests) | `.unwrap()` / `.expect("msg")` |
 | Turn `Option` into `Result` | `.ok_or(err)` / `.ok_or_else(...)` |
+
+## Getting started with Serde
+
+Serde splits serialization into two concerns, and understanding the split is most of the battle:
+
+- The **`serde`** crate defines the generic `Serialize`/`Deserialize` traits, plus a `#[derive(...)]` macro (enabled via the `derive` feature) that auto-implements them for your structs.
+- **Format-specific crates** like `serde_json` handle the actual encoding and decoding for one format.
+
+So `serde` describes *what* your data looks like structurally, and `serde_json` decides *how* that gets written to bytes. Swapping JSON for YAML or MessagePack means changing the format crate, not your structs.
+
+Once a type derives these traits, converting to and from JSON is two function calls — `serde_json::to_string` and `serde_json::from_str` — both of which return a `Result` that composes cleanly with `anyhow::Result` through the `?` operator described above.
+
+### Basic derive
+
+```rust
+use serde::{Serialize, Deserialize};
+
+#[derive(Debug, Serialize, Deserialize)]
+struct BlogPost {
+    id: u32,
+    title: String,
+}
+```
+
+### Deserializing JSON into a struct
+
+```rust
+let data = r#"{"id": 1, "title": "Hello, Rust"}"#;
+let post: BlogPost = serde_json::from_str(data)?;
+println!("{:?}", post);
+```
+
+### Serializing a struct back to JSON
+
+```rust
+let json = serde_json::to_string(&post)?;
+println!("{}", json);
+// {"id":1,"title":"Hello, Rust"}
+```
+
+### Pretty-printed JSON
+
+```rust
+let pretty = serde_json::to_string_pretty(&post)?;
+println!("{}", pretty);
+```
+
+### Renaming fields to match external JSON conventions
+
+Rust wants `snake_case` fields; most JSON APIs hand you `camelCase`. Rather than compromising your struct's naming, annotate it:
+
+```rust
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BlogPost {
+    id: u32,
+    post_title: String, // serializes as "postTitle"
+}
+```
+
+### Skipping optional/empty fields
+
+```rust
+#[derive(Debug, Serialize, Deserialize)]
+struct BlogPost {
+    id: u32,
+    title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    subtitle: Option<String>,
+}
+```
+
+### Required `Cargo.toml` setup
+
+```toml
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+```
+
+### The gotcha: forgetting the `derive` feature
+
+This one costs people an afternoon. Leave the `derive` feature off:
+
+```toml
+serde = "1"   # missing features = ["derive"]
+```
+
+and the derive macro simply doesn't exist. The confusing part is what the compiler tells you: it reports that your type doesn't implement `Serialize`/`Deserialize` — even though the `#[derive(Serialize, Deserialize)]` attribute is sitting right there in the code. The error points at the symptom, not the cause.
+
+Whenever a derive that's plainly written in your source seems to have had no effect, check the crate's feature flags first.
