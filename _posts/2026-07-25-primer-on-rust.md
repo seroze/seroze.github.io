@@ -344,131 +344,6 @@ help: you might have meant to return this value
 
 The `help` line is the compiler nudging you toward Fix 1 — but Fix 3 is the one worth internalizing. Expression-oriented control flow, where `if`/`match`/blocks all produce values, is one of the biggest conceptual shifts coming from statement-oriented languages, and it's worth getting comfortable with early.
 
-## Finding the min and max of an array
-
-Given an array, how do you find its largest and smallest element? There's a spectrum from manual loops to idiomatic iterator methods — worth knowing all of them, since production code leans heavily on the iterator versions.
-
-### 1. Manual loop (good for building intuition)
-
-```rust
-fn main() {
-    let input = [23, 82, 16, 45, 21, 94, 12, 34];
-
-    let mut largest = i32::MIN;
-    let mut smallest = i32::MAX;
-
-    for &x in &input {
-        if x > largest {
-            largest = x;
-        }
-        if x < smallest {
-            smallest = x;
-        }
-    }
-
-    println!("{largest} is largest and {smallest} is smallest");
-}
-```
-
-Why `for &x in &input`? `&input` iterates over `&i32`, and the `&x` pattern dereferences each one automatically, so `x` ends up being a plain `i32`. The equivalent, slightly more verbose form is:
-
-```rust
-for x in input.iter() {
-    if *x > largest {
-        largest = *x;
-    }
-}
-```
-
-### 2. Iterate by value
-
-Arrays implement `IntoIterator`, so this also works directly:
-
-```rust
-for x in input {
-    println!("{x}");
-}
-```
-
-Here `x` is an `i32` because arrays of `Copy` types are copied into the loop.
-
-### 3. `.iter().max()` / `.min()` (idiomatic)
-
-Cleanest when you only need the result:
-
-```rust
-fn main() {
-    let input = [23, 82, 16, 45, 21, 94, 12, 34];
-
-    let largest = input.iter().max().unwrap();
-    let smallest = input.iter().min().unwrap();
-
-    println!("{largest} is largest and {smallest} is smallest");
-}
-```
-
-Note these are `&i32`. Dereference with `*` if you want owned values: `*input.iter().max().unwrap()`.
-
-### 4. Both in one pass with `fold`
-
-More advanced, but only traverses the array once:
-
-```rust
-let (smallest, largest) = input.iter().fold(
-    (i32::MAX, i32::MIN),
-    |(min, max), &x| (min.min(x), max.max(x)),
-);
-
-println!("{largest} {smallest}");
-```
-
-### 5. `i32::min` / `i32::max` methods
-
-Integers themselves have `.min()`/`.max()` methods, which many Rust developers prefer over explicit `if`s:
-
-```rust
-let mut smallest = i32::MAX;
-let mut largest = i32::MIN;
-
-for &x in &input {
-    smallest = smallest.min(x);
-    largest = largest.max(x);
-}
-```
-
-### Common ways to iterate
-
-```rust
-// Values
-for x in input { println!("{x}"); }
-
-// References (x: &i32)
-for x in input.iter() { println!("{x}"); }
-
-// Mutable references
-let mut input = [1, 2, 3];
-for x in input.iter_mut() { *x *= 2; }
-
-// Index and value
-for (i, x) in input.iter().enumerate() { println!("{i}: {x}"); }
-
-// Just indices — less idiomatic unless you actually need the index
-for i in 0..input.len() { println!("{}", input[i]); }
-```
-
-### Which approach is idiomatic?
-
-| Task | Idiomatic approach |
-|---|---|
-| Print elements | `for x in &input` |
-| Need the index | `iter().enumerate()` |
-| Find maximum | `iter().max()` |
-| Find minimum | `iter().min()` |
-| Find both in one pass | `fold()` or a manual loop |
-| Modify elements | `iter_mut()` |
-
-The iterator methods worth becoming fluent in early: `iter()`, `iter_mut()`, `into_iter()`, `enumerate()`, `map()`, `filter()`, `fold()`, `collect()`, `find()`, `any()`, `all()`, `max()`, `min()`. These form the core of idiomatic Rust and show up throughout production code.
-
 ## Arrays, slices, and `Vec`
 
 Most languages give you one list type. Rust gives you three, and the distinction between them is the first place ownership becomes concrete rather than theoretical.
@@ -537,6 +412,45 @@ v.contains(&20)   // true
 ```
 
 Indexing with `[]` panics on an out-of-bounds access; `.get()` returns an `Option`. Use `[]` when an out-of-range index means your logic is broken, `.get()` when the index came from outside your control.
+
+**Minimum and maximum.** Reach for the iterator methods rather than a hand-rolled loop:
+
+```rust
+let largest  = v.iter().max().unwrap();
+let smallest = v.iter().min().unwrap();
+```
+
+They return `Option<&T>` — `None` for an empty slice — so you get a `&i32` here. Dereference with `*` if you want an owned value.
+
+That's two traversals. If you want both in one pass, `fold` carries the pair along:
+
+```rust
+let (smallest, largest) = v.iter().fold(
+    (i32::MAX, i32::MIN),
+    |(min, max), &x| (min.min(x), max.max(x)),
+);
+```
+
+The `.min()`/`.max()` inside the closure are `i32`'s own methods, not the iterator ones — worth knowing separately, since `a.max(b)` reads better than an explicit `if`.
+
+**Iterating.** The three iterator constructors differ only in what they hand you:
+
+```rust
+for x in v.iter()     { }  // x: &i32     — borrow
+for x in v.iter_mut() { *x *= 2; }  // x: &mut i32 — borrow mutably
+for x in v            { }  // x: i32      — consumes v (IntoIterator)
+
+for x in &v  { }  // shorthand for v.iter()
+for &x in &v { }  // pattern destructures the reference, so x: i32
+
+for (i, x) in v.iter().enumerate() { println!("{i}: {x}"); }
+```
+
+`for &x in &v` is the one that confuses people at first: the `&` on the left is a *pattern* that unwraps the reference, so `x` comes out as a plain `i32` instead of `&i32`. It only works for `Copy` types.
+
+Indexing by range — `for i in 0..v.len()` — works but is the least idiomatic option unless you genuinely need the index for something other than lookup.
+
+The iterator methods worth becoming fluent in early: `iter()`, `iter_mut()`, `into_iter()`, `enumerate()`, `map()`, `filter()`, `fold()`, `collect()`, `find()`, `any()`, `all()`, `max()`, `min()`. These form the core of idiomatic Rust and show up throughout production code.
 
 ### Growing and shrinking (`Vec` only)
 
@@ -664,6 +578,10 @@ grid[r * cols + c] = 1;
 | Remove by index, keep order | `remove(i)` — O(n) |
 | Remove by index, order irrelevant | `swap_remove(i)` — O(1) |
 | Safe indexed access | `get(i)` → `Option<&T>` |
+| Smallest / largest element | `iter().min()` / `iter().max()` |
+| Both in one traversal | `fold()` |
+| Iterate with the index | `iter().enumerate()` |
+| Modify every element | `iter_mut()` |
 | Filter in place | `retain(\|x\| ...)` |
 | Sort | `sort_unstable()` / `sort_by_key()` |
 | Remove duplicates | `sort()` then `dedup()` |
