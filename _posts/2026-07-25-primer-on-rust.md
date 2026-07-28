@@ -721,6 +721,26 @@ read it as:
 
 > "This function only works for types that know how to create a default value using `T::default()`."
 
+### `Copy` and `Clone` — why `String` isn't `Copy`
+
+`Copy` means "duplicating this value is just a `memcpy` of its bytes, and both copies are independently valid."
+
+A `String` is three words on the stack — pointer, length, capacity — pointing at a heap allocation. Bitwise-copying those three words gives you two `String`s pointing at the same buffer. Both would run their destructor at scope end → double free.
+
+Rust enforces this structurally: **`Copy` and `Drop` are mutually exclusive.** If a type has a destructor, it can't be `Copy`, because `Copy` implies duplication is a no-op the compiler can do silently and the value has no cleanup obligation to duplicate.
+
+```rust
+struct Foo;
+impl Copy for Foo {}
+impl Drop for Foo { fn drop(&mut self) {} }
+// error[E0184]: the trait `Copy` cannot be implemented for this type;
+//               the type has a destructor
+```
+
+So anything owning a resource — `String`, `Vec`, `Box`, `File`, `Rc` (needs a refcount increment) — is `Clone` instead. `Clone` is the explicit, possibly-expensive version: you have to write `.clone()`, which makes the allocation visible in the source.
+
+`Copy` is the "trivially duplicable" subset: integers, `char`, `bool`, `&T`, and aggregates of those.
+
 ## Deref coercion
 
 Write enough Rust and you'll hit a moment where a function wants a `&str`, you have a `String`, and passing `&my_string` just... works. No conversion, no `.as_str()`. That's **deref coercion**, and it's worth understanding rather than treating as magic.
