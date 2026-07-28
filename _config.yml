@@ -28,6 +28,10 @@ github_username: seroze
 twitter_username: stringray3
 future: true
 
+# GitHub Pages builds in UTC. Without this, a post dated `00:00:00 +0530`
+# renders as 18:30 the *previous* day — every post shows one day early.
+timezone: Asia/Kolkata
+
 # Build settings
 theme: minima
 plugins:

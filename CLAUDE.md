@@ -105,6 +105,8 @@ date: YYYY-MM-DD 00:00:00 +0530
 
 **Why:** GitHub Pages builds at UTC time. Any non-zero time in IST (+0530) may be ahead of UTC at build time, causing Jekyll to silently skip the post. `_config.yml` has `future: true` as a safety net, but always use midnight to avoid confusion.
 
+`_config.yml` must also set `timezone: Asia/Kolkata`. Without it Jekyll renders dates in the *build* timezone (UTC on Pages), so `00:00:00 +0530` displays as 18:30 the previous day and **every post shows one day early** — on the homepage, on post pages, and in `search.json`. This is easy to miss locally, where the build machine is usually already in IST.
+
 ## Deploying
 
 ```bash
