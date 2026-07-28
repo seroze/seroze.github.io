@@ -741,6 +741,129 @@ So anything owning a resource — `String`, `Vec`, `Box`, `File`, `Rc` (needs a 
 
 `Copy` is the "trivially duplicable" subset: integers, `char`, `bool`, `&T`, and aggregates of those.
 
+## Interior mutability
+
+Both `Cell<T>` and `RefCell<T>` let you mutate through a `&T` instead of a `&mut T`. Both wrap `UnsafeCell` underneath, both are `!Sync`. The difference is how they keep aliasing safe.
+
+### `Cell`: move values in and out
+
+`Cell<T>` never hands out a reference to its interior. No reference means nothing to alias, so no checking is needed. Zero runtime cost, can't panic.
+
+```rust
+let c = Cell::new(5);
+c.set(10);              // no &mut needed
+let v = c.get();        // requires T: Copy
+let old = c.replace(7); // works for non-Copy too
+let owned = c.take();   // requires T: Default
+```
+
+The catch is no in-place mutation. To modify a `Cell<Vec<i32>>` you take it out, push, and set it back.
+
+### `RefCell`: real references, checked at runtime
+
+`RefCell<T>` keeps a borrow counter. `borrow()` gives a `Ref<T>`, `borrow_mut()` gives a `RefMut<T>`, and the count is decremented when those guards drop.
+
+```rust
+let rc = RefCell::new(vec![1, 2, 3]);
+rc.borrow_mut().push(4);
+println!("{}", rc.borrow().len());
+
+let _a = rc.borrow();
+let _b = rc.borrow_mut();  // panics: already borrowed
+```
+
+Costs a word of storage plus a branch per borrow, and violations panic at runtime instead of failing to compile. `try_borrow` / `try_borrow_mut` return a `Result` if you'd rather handle it.
+
+|  | `Cell` | `RefCell` |
+|---|---|---|
+| Access | get/set whole value | `&`/`&mut` to interior |
+| Cost | free | borrow flag + check |
+| Failure | can't fail | panics on bad borrow |
+| Good for | small `Copy` types | large or non-`Copy` types |
+
+Rule of thumb: `Cell` first for `Copy` scalars, it's strictly cheaper and can't blow up. `RefCell` when you need to operate on the value in place, which is why `Rc<RefCell<T>>` is the standard shape for shared mutable graphs.
+
+If you hold a `&mut Cell<T>` or `&mut RefCell<T>`, both have `get_mut()`, which is free and statically checked. The runtime machinery only exists on the shared path. Thread-safe analogues are `Mutex` / `RwLock`.
+
+### Passing them around
+
+The signature is just a shared reference:
+
+```rust
+fn solve(counter: &Cell<u64>) {
+    counter.set(counter.get() + 1);
+}
+```
+
+(`ref` is a keyword, so don't name the parameter that.)
+
+There's no stable `update` method, so read-modify-write is manual: `c.set(c.get() * 2)`.
+
+Two conversions worth knowing. `Cell::from_mut` turns a `&mut T` into a `&Cell<T>` for free, when you already have exclusive access but want to hand out several shared-mutable views. And `as_slice_of_cells` turns a `&Cell<[T]>` into a `&[Cell<T>]`, so you can mutate elements while several parts of the code hold the slice.
+
+Don't reach for this too early. If a single caller owns the value, plain `&mut T` is better: compile-time checked, costs nothing. `Cell` earns its place when you need aliasing *and* mutation. The classic case is a memoized field on a struct whose methods take `&self`:
+
+```rust
+struct Grid {
+    data: Vec<i32>,
+    checksum: Cell<Option<u64>>,
+}
+
+impl Grid {
+    fn checksum(&self) -> u64 {   // &self, not &mut self
+        if let Some(v) = self.checksum.get() { return v; }
+        let v = self.data.iter().map(|&x| x as u64).sum();
+        self.checksum.set(Some(v));
+        v
+    }
+}
+```
+
+Callers holding shared references can still call it. That's the whole payoff.
+
+### `Cell` without `get()`
+
+The `Copy` bound is only on `get()` — see the `Copy` and `Clone` section above for why `String` and friends can't have it. `Cell<T>` itself works for any `T`, and the move-out API covers plenty: `take()`, `replace()`, `set()`, `swap()`. The pattern is pull the value out, work on the owned value, put it back.
+
+```rust
+struct Collector {
+    pending: Cell<Vec<Event>>,
+}
+
+impl Collector {
+    fn push(&self, e: Event) {
+        let mut v = self.pending.take();  // leaves Vec::new() behind
+        v.push(e);
+        self.pending.set(v);
+    }
+
+    fn drain(&self) -> Vec<Event> {
+        self.pending.take()               // hand off, reset to empty
+    }
+}
+```
+
+The canonical one is single-threaded async:
+
+```rust
+struct Signal {
+    waker: Cell<Option<Waker>>,
+}
+
+impl Signal {
+    fn register(&self, w: Waker) { self.waker.set(Some(w)); }
+    fn fire(&self) {
+        if let Some(w) = self.waker.take() { w.wake(); }
+    }
+}
+```
+
+Also `Cell<Option<Box<Node>>>` for unlinking nodes in linked structures behind a shared reference, and `front.swap(&back)` for double-buffering — no `Copy`, no clone, no allocation.
+
+One footgun with `take()`: while you hold the value, the cell contains `T::default()`. Anything that reaches back into that cell mid-operation sees an empty value instead of the real one. `RefCell` would panic loudly in the same situation, which is sometimes what you want.
+
+For non-`Copy` types `RefCell` is usually nicer anyway — `self.pending.borrow_mut().push(e)` beats the take-push-set dance. `Cell<T>` for non-`Copy` shines specifically when the operation *is* a move: take it, swap it, hand it off.
+
 ## Deref coercion
 
 Write enough Rust and you'll hit a moment where a function wants a `&str`, you have a `String`, and passing `&my_string` just... works. No conversion, no `.as_str()`. That's **deref coercion**, and it's worth understanding rather than treating as magic.
