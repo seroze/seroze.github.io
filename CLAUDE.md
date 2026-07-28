@@ -95,6 +95,27 @@ The tradeoff: a term that appears only in the middle of a post won't be found. I
 
 Posts with `published: false` are excluded automatically, since `site.posts` already omits them.
 
+## Light/dark theming
+
+Readers get dark mode from their OS by default, plus a toggle in the header that overrides it and persists.
+
+Moving parts:
+- `assets/main.scss` — imports minima, then declares CSS custom properties and re-points minima's colour-bearing selectors at them. minima 2.5.2 compiles colours straight into the stylesheet, so they **cannot** be swapped at runtime via Sass variables — hence the custom-property layer.
+- `_includes/head.html` — a copy of minima 2.5.2's `head.html` plus the theme script. **minima 2.5.2 has no `custom-head.html` hook** (that arrived in 3.x), so overriding the whole include is the only way in. If you ever bump minima, re-copy the gem's `head.html` and re-apply the script block.
+
+The theme script is inline and synchronous *on purpose*: it must set `data-theme` before first paint, or dark-mode readers get a white flash on every page load. Don't move it to an external file or add `defer`.
+
+Three cascade layers, weakest to strongest:
+1. light values on `:root`
+2. `@media (prefers-color-scheme: dark)`, scoped `:root:not([data-theme="light"])` so an explicit light choice still wins
+3. `:root[data-theme="dark"]`, written by the toggle
+
+Because layers 2 and 3 have equal specificity, **the explicit-choice block must stay after the media query in the file.** Reordering silently breaks the toggle for anyone whose OS is set to dark.
+
+Dark syntax highlighting is overridden separately — minima's rouge palette (bold-only keywords, `#998` comments) is close to unreadable on a dark background.
+
+Known gap: the dark palette passes WCAG AA, but minima's inherited *light* values don't — `.post-meta` at `#828282` is 3.78:1 and links at `#2a7ae2` are 4.15:1, both under the 4.5:1 threshold. Changing `--muted` to `#6f6f6f` and `--link` to `#1a68c9` would fix it.
+
 ## Post timestamps
 
 Always use `00:00:00 +0530` as the time in post frontmatter:

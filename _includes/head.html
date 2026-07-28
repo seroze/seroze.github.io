@@ -1,0 +1,78 @@
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  {%- seo -%}
+  <link rel="stylesheet" href="{{ "/assets/main.css" | relative_url }}">
+  {%- feed_meta -%}
+  {%- if jekyll.environment == 'production' and site.google_analytics -%}
+    {%- include google-analytics.html -%}
+  {%- endif -%}
+
+  {%- comment -%}
+    Theme switching. This block is deliberately inline and synchronous: it has to
+    run before first paint, or a dark-mode reader gets a white flash on every
+    page load. Overrides _includes/head.html from the minima gem (2.5.2), which
+    has no custom-head hook.
+  {%- endcomment -%}
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var mq = window.matchMedia("(prefers-color-scheme: dark)");
+
+      function stored() {
+        try { return localStorage.getItem("theme"); } catch (e) { return null; }
+      }
+      function resolved() {
+        return stored() || (mq.matches ? "dark" : "light");
+      }
+      function apply(theme) {
+        root.setAttribute("data-theme", theme);
+      }
+
+      // Runs before paint — no flash of the wrong theme.
+      apply(resolved());
+
+      // Follow the OS if the reader has never picked a theme themselves.
+      var onChange = function () { if (!stored()) apply(mq.matches ? "dark" : "light"); };
+      if (mq.addEventListener) mq.addEventListener("change", onChange);
+      else if (mq.addListener) mq.addListener(onChange);
+
+      document.addEventListener("DOMContentLoaded", function () {
+        var wrapper = document.querySelector(".site-header .wrapper");
+        if (!wrapper) return;
+
+        var btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "theme-toggle";
+        btn.innerHTML =
+          '<svg class="icon-sun" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">' +
+            '<circle cx="12" cy="12" r="4.5"/>' +
+            '<path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M19.1 4.9l-1.8 1.8M6.7 17.3l-1.8 1.8" ' +
+              'stroke-width="2" stroke-linecap="round" fill="none"/>' +
+          "</svg>" +
+          '<svg class="icon-moon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">' +
+            '<path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/>' +
+          "</svg>";
+
+        function label() {
+          var dark = root.getAttribute("data-theme") === "dark";
+          var next = dark ? "light" : "dark";
+          btn.setAttribute("aria-label", "Switch to " + next + " theme");
+          btn.setAttribute("title", "Switch to " + next + " theme");
+          btn.setAttribute("aria-pressed", String(dark));
+        }
+        label();
+
+        btn.addEventListener("click", function () {
+          var next = root.getAttribute("data-theme") === "dark" ? "light" : "dark";
+          apply(next);
+          try { localStorage.setItem("theme", next); } catch (e) {}
+          label();
+        });
+
+        wrapper.appendChild(btn);
+      });
+    })();
+  </script>
+</head>

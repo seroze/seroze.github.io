@@ -1,0 +1,204 @@
+---
+# Only the main Sass file needs front matter (the dashes are enough)
+---
+
+@import "minima";
+
+/**
+ * Light/dark theming.
+ *
+ * minima 2.5.2 compiles its colours straight into the stylesheet, so they
+ * can't be swapped at runtime through Sass variables. Instead we declare CSS
+ * custom properties and re-point minima's colour-bearing selectors at them.
+ *
+ * Which palette applies is decided in three layers, weakest to strongest:
+ *   1. the light values on :root
+ *   2. prefers-color-scheme, for readers who never touch the toggle
+ *      (and for anyone with JS disabled)
+ *   3. data-theme on <html>, written by the toggle and persisted
+ */
+
+:root {
+  --bg: #fdfdfd;
+  --surface: #f4f4f4;
+  --text: #111;
+  --heading: #424242;
+  --muted: #828282;
+  --link: #2a7ae2;
+  --link-visited: #1756a9;
+  --border: #e8e8e8;
+  --code-bg: #eef;
+  --header-rule: #424242;
+}
+
+@mixin dark-palette {
+  --bg: #1a1a1a;
+  --surface: #242424;
+  --text: #e0e0e0;
+  --heading: #f0f0f0;
+  --muted: #9a9a9a;
+  --link: #6aa9ff;
+  --link-visited: #a08cff;
+  --border: #3a3a3a;
+  --code-bg: #202020;
+  --header-rule: #4a4a4a;
+}
+
+// Follow the OS, unless the reader has explicitly asked for light.
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { @include dark-palette; }
+}
+
+// An explicit choice always wins over the OS.
+:root[data-theme="dark"] { @include dark-palette; }
+
+/* ----- re-point minima at the tokens ----- */
+
+body {
+  background-color: var(--bg);
+  color: var(--text);
+}
+
+h1, h2, h3, h4, h5, h6 { color: var(--heading); }
+
+a {
+  color: var(--link);
+  &:visited { color: var(--link-visited); }
+  &:hover { color: var(--text); }
+}
+
+.site-header {
+  border-top-color: var(--header-rule);
+  border-bottom-color: var(--border);
+}
+
+.site-title {
+  &, &:visited { color: var(--heading); }
+}
+
+.site-nav {
+  background-color: var(--bg);
+  border-color: var(--border);
+
+  .page-link { color: var(--text); }
+  .menu-icon > svg { fill: var(--muted); }
+}
+
+.post-meta { color: var(--muted); }
+.post-link { color: var(--link); }
+
+.site-footer { border-top-color: var(--border); }
+.footer-heading { color: var(--heading); }
+.contact-list, .social-media-list, .footer-col-wrapper { color: var(--muted); }
+.social-media-list .username { color: var(--muted); }
+.svg-icon { fill: var(--muted); }
+
+blockquote {
+  color: var(--muted);
+  border-left-color: var(--border);
+}
+
+hr { border-color: var(--border); }
+
+pre, code {
+  background-color: var(--code-bg);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.highlight { background: var(--code-bg); }
+.highlighter-rouge .highlight { background: var(--code-bg); }
+
+table {
+  color: var(--text);
+  border-color: var(--border);
+
+  th {
+    background-color: var(--surface);
+    color: var(--heading);
+    border-color: var(--border);
+  }
+  td { border-color: var(--border); }
+  tr:nth-child(even) { background-color: var(--surface); }
+}
+
+/* ----- syntax highlighting in dark mode -----
+   minima's rouge palette is tuned for a near-white background; several of its
+   tokens (bold-only keywords, #998 comments) are close to unreadable on dark. */
+
+@mixin dark-syntax {
+  .highlight {
+    color: var(--text);
+
+    .c, .cm, .c1, .cs, .cd { color: #7f8c8d; font-style: italic; }
+    .k, .kc, .kd, .kn, .kp, .kr, .kt, .kv { color: #c678dd; font-weight: normal; }
+    .s, .s1, .s2, .sb, .sc, .sd, .se, .sh, .si, .sx, .sr, .ss { color: #98c379; }
+    .m, .mf, .mh, .mi, .mo, .mb, .mx, .il { color: #d19a66; }
+    .nf, .nc, .nd { color: #61afef; }
+    .nb, .no, .nn, .nv, .vc, .vg, .vi { color: #e5c07b; }
+    .na, .nt { color: #e06c75; }
+    .o, .ow, .p { color: #abb2bf; font-weight: normal; }
+    .err { color: #e06c75; background-color: transparent; }
+    .gd { color: #e06c75; background-color: #3a2224; }
+    .gi { color: #98c379; background-color: #223a26; }
+    .gh, .gu { color: #61afef; }
+    .gs { font-weight: bold; }
+    .ge { font-style: italic; }
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { @include dark-syntax; }
+}
+:root[data-theme="dark"] { @include dark-syntax; }
+
+/* ----- the toggle itself ----- */
+
+.theme-toggle {
+  float: right;
+  margin: 17px 0 0 20px;
+  padding: 6px;
+  width: 32px;
+  height: 32px;
+  line-height: 0;
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  -webkit-appearance: none;
+  appearance: none;
+
+  &:hover {
+    color: var(--text);
+    border-color: var(--muted);
+  }
+  &:focus-visible {
+    outline: 2px solid var(--link);
+    outline-offset: 2px;
+  }
+
+  svg {
+    display: block;
+    stroke: currentColor;
+    fill: currentColor;
+  }
+  .icon-sun path { stroke: currentColor; }
+
+  // Show whichever icon represents the theme you'd switch *to*.
+  .icon-moon { display: none; }
+}
+
+:root[data-theme="dark"] .theme-toggle {
+  .icon-sun { display: none; }
+  .icon-moon { display: block; }
+}
+
+// On narrow screens minima lifts .site-nav out of flow into a hamburger at
+// the top-right, so the toggle needs to step aside to avoid sitting on it.
+@include media-query($on-palm) {
+  .theme-toggle {
+    margin-top: 9px;
+    margin-right: 46px;
+  }
+}
