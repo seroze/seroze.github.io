@@ -102,6 +102,43 @@ This comes up often if you're organizing practice exercises into numbered folder
 - Pass an explicit package name: `cargo init --name basic_syntax`
 - Keep the directory name but override the binary name in `Cargo.toml` via a `[[bin]]` section, as shown above.
 
+### Hyphens in package names, underscores in code
+
+Related trap, and one that's usually explained badly. Say your package is named `fizzbuzz-3`:
+
+```toml
+[package]
+name = "fizzbuzz-3"
+```
+
+```rust
+use fizzbuzz-3::solve;   // syntax error
+use fizzbuzz_3::solve;   // the only spelling that compiles
+```
+
+The reason is worth being precise about, because the usual "hyphens get converted to underscores" phrasing suggests a conversion you could opt out of:
+
+- **The package name in `Cargo.toml` is just a string identifier** for Cargo and crates.io. Hyphens are perfectly fine there.
+- **Rust source identifiers can't contain `-` at all.** It isn't a valid identifier character — the parser reads it as subtraction. `fizzbuzz-3` in a `use` statement is a *syntax error*, not a valid-but-wrong name.
+- **Cargo derives the crate's Rust identifier from the package name** by replacing every `-` with `_`. That derived identifier is what you reference in code, always and unconditionally.
+
+So it isn't "if I use a hyphen it gets converted." You can never legally type `-` in that position in a `.rs` file. Cargo does the conversion on its side, package name → identifier, and your source has to already be written in the underscore form to compile at all.
+
+The same asymmetry shows up with dependencies — hyphenated in the manifest, underscored at the `use` site:
+
+```toml
+[dependencies]
+async-trait = "0.1"
+tokio-util = "0.7"
+```
+
+```rust
+use async_trait::async_trait;
+use tokio_util::codec::Framed;
+```
+
+Hyphens are the more common convention for published crate names, so most of the ecosystem's `use` statements are spelled differently from the crate names you search for on crates.io. That's expected, not a mistake.
+
 ## What is a workspace?
 
 A Cargo workspace is a way to manage multiple related crates (packages) under a single umbrella.
@@ -685,6 +722,86 @@ String::new()   // :: create a String
     .trim()     // .  operate on it
     .len();     // .  operate on the result
 ```
+
+## Traits
+
+A trait is a set of behaviours a type can implement — closest to an interface in Java or a concept in C++. The part that matters day to day is **trait bounds**: when a generic function writes `T: SomeTrait`, it's saying "this only works for types that can do this particular thing."
+
+Reading bounds fluently is most of what makes standard library signatures stop looking cryptic.
+
+### `Default`
+
+`Default` is the trait for types that know how to produce a sensible zero value — `0` for integers, `""` for `String`, `None` for `Option`, an empty `Vec`. You get it via `T::default()`.
+
+A good way to see why the bound exists at all is `Cell::take()`.
+
+**Why does `Cell::take()` require `Default`?**
+
+Suppose you have:
+
+```rust
+use std::cell::Cell;
+
+let c = Cell::new(10);
+```
+
+When you call:
+
+```rust
+let value = c.take();
+```
+
+Rust needs to do two things:
+
+1. Return the current value (`10`).
+2. Leave something inside the `Cell`, because a `Cell` can never be empty.
+
+So it replaces the old value with `T::default()`. Conceptually, `take()` does this:
+
+```rust
+fn take(&self) -> T
+where
+    T: Default,
+{
+    self.replace(T::default())
+}
+```
+
+So after:
+
+```rust
+let c = Cell::new(10);
+
+let x = c.take();
+
+println!("{}", x);       // 10
+println!("{}", c.get()); // 0
+```
+
+The `10` is returned, and the cell now contains `0`, which is `i32::default()`.
+
+For `String`:
+
+```rust
+let c = Cell::new(String::from("hello"));
+
+let s = c.take();
+
+println!("{s}");              // hello
+println!("{:?}", c.take());   // ""
+```
+
+The cell is replaced with an empty `String`.
+
+So whenever you see a bound like:
+
+```rust
+T: Default
+```
+
+read it as:
+
+> "This function only works for types that know how to create a default value using `T::default()`."
 
 ## Deref coercion
 
