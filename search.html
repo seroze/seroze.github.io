@@ -1,0 +1,140 @@
+---
+layout: default
+title: "Search"
+permalink: /search/
+---
+
+<h1>Search</h1>
+
+<input type="search" id="search-box" placeholder="Search posts by title, tag or summary…" autocomplete="off" autofocus>
+<p id="search-status"></p>
+<ul id="search-results" class="post-list"></ul>
+
+<style>
+  #search-box {
+    width: 100%;
+    padding: 10px 12px;
+    font-size: 1.1em;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    box-sizing: border-box;
+  }
+  #search-status {
+    color: #828282;
+    font-size: 0.9em;
+    margin: 12px 0;
+  }
+  #search-results { margin-left: 0; list-style: none; }
+  #search-results li { margin-bottom: 22px; }
+  #search-results .result-title { font-size: 1.25em; }
+  #search-results .result-meta {
+    color: #828282;
+    font-size: 0.85em;
+    display: block;
+  }
+  #search-results .result-excerpt { margin: 4px 0 0; }
+  #search-results mark { background: #fff2a8; }
+</style>
+
+<script>
+  (function () {
+    var box = document.getElementById("search-box");
+    var status = document.getElementById("search-status");
+    var results = document.getElementById("search-results");
+    var posts = null;
+    var pending = null;
+
+    function escapeHtml(s) {
+      return s.replace(/[&<>"]/g, function (c) {
+        return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+      });
+    }
+
+    function highlight(text, terms) {
+      var out = escapeHtml(text);
+      terms.forEach(function (t) {
+        var safe = t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        out = out.replace(new RegExp("(" + safe + ")", "gi"), "<mark>$1</mark>");
+      });
+      return out;
+    }
+
+    // Every term must match somewhere; title hits outrank tags, tags outrank excerpt.
+    function score(post, terms) {
+      var title = post.title.toLowerCase();
+      var meta = (post.tags + " " + post.category).toLowerCase();
+      var excerpt = post.excerpt.toLowerCase();
+      var total = 0;
+      for (var i = 0; i < terms.length; i++) {
+        var hit = 0;
+        if (title.indexOf(terms[i]) !== -1) hit += 10;
+        if (meta.indexOf(terms[i]) !== -1) hit += 5;
+        if (excerpt.indexOf(terms[i]) !== -1) hit += 1;
+        if (hit === 0) return 0;
+        total += hit;
+      }
+      return total;
+    }
+
+    function render(query) {
+      var terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+      results.innerHTML = "";
+
+      if (!terms.length) {
+        status.textContent = posts ? posts.length + " posts indexed." : "";
+        return;
+      }
+
+      var matched = [];
+      posts.forEach(function (post) {
+        var s = score(post, terms);
+        if (s > 0) matched.push({ post: post, score: s });
+      });
+      // Best score first, then newest first among ties.
+      matched.sort(function (a, b) {
+        return b.score - a.score || b.post.date.localeCompare(a.post.date);
+      });
+
+      status.textContent = matched.length === 1 ? "1 result" : matched.length + " results";
+
+      matched.forEach(function (m) {
+        var p = m.post;
+        var li = document.createElement("li");
+        li.innerHTML =
+          '<a class="result-title" href="' + p.url + '">' + highlight(p.title, terms) + "</a>" +
+          '<span class="result-meta">' + p.date + (p.category ? " · " + p.category : "") + "</span>" +
+          '<p class="result-excerpt">' + highlight(p.excerpt, terms) + "</p>";
+        results.appendChild(li);
+      });
+    }
+
+    // Keep ?q= in sync so a search can be linked or reloaded.
+    function sync() {
+      var q = box.value;
+      render(q);
+      clearTimeout(pending);
+      pending = setTimeout(function () {
+        var url = q ? "?q=" + encodeURIComponent(q) : location.pathname;
+        history.replaceState(null, "", url);
+      }, 300);
+    }
+
+    status.textContent = "Loading index…";
+    box.disabled = true;
+
+    fetch("{{ '/search.json' | relative_url }}")
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        posts = data;
+        box.disabled = false;
+        box.focus();
+        var q = new URLSearchParams(location.search).get("q");
+        if (q) box.value = q;
+        render(box.value);
+        box.addEventListener("input", sync);
+      })
+      .catch(function () {
+        status.textContent = "Could not load the search index.";
+      });
+  })();
+</script>
