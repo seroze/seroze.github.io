@@ -70,14 +70,6 @@ error: externally-managed-environment
 
 This is Debian/Ubuntu's [PEP 668](https://peps.python.org/pep-0668/) guard rail: it refuses to let pip write into the system Python's `site-packages`, on purpose. It's not a permissions bug to work around with a flag — it's telling you exactly what to do: use a venv.
 
-## A prompt that lied
-
-Here's the trap I fell into next. My shell prompt showed `(pickledb-py-client)`, which looked like an active venv. It wasn't — it was left over from an earlier `uv` setup that had since been retrofitted with plain pip. The same `externally-managed-environment` error came back, because pip was still quietly resolving to the system interpreter.
-
-**A prompt decoration is not proof of anything.** `which python` and `which pip` tell you the truth — if the path doesn't lead into `.venv/bin/`, nothing you install will go where you think it's going.
-
-The fix was boring on purpose: throw away the ambiguous state, create a clean venv, activate it, and confirm with `which` before touching pip at all.
-
 ## The macro that has to be there
 
 One bug worth calling out, because it fails in a confusing way: the `impl` block was missing `#[pymethods]`. Without it, `#[new]` and the dunder methods are just inert attributes on a plain Rust `impl` — PyO3 never sees them, and depending on the edition, rustc won't even compile it.
@@ -153,7 +145,6 @@ Six lines of Python driving a Rust `HashMap`, with `len()` and `in` behaving exa
 
 - `#[pymethods]` is what makes `#[new]` and dunder methods real in PyO3. A plain `impl` block is just Rust — PyO3 never looks at it.
 - `crate-type = ["cdylib"]` is non-negotiable. Without it you get a Rust library Python cannot load.
-- A shell prompt showing `(env-name)` is decoration, not evidence. `which python` / `which pip` is the only check that doesn't lie.
 - `maturin develop` is for iterating inside one project's venv. `maturin build` + `pip install <wheel>` is how a Rust extension crosses into a different project entirely.
 
 *pyo3 0.22 · maturin · rust edition 2024 — written while debugging a hash map that just wanted to say hello to Python.*
