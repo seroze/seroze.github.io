@@ -10,7 +10,7 @@ published: true
 
 *A running collection of Rust concepts worth knowing cold.*
 
-For a worked example of taking this somewhere else, see [pickleDB ≠ pickledb: what PyO3 taught me about Python packaging](/rust-python-interop-pyo3/).
+For a worked example of taking this somewhere else, see [Calling Rust from Python with PyO3](/rust-python-interop-pyo3/).
 
 ## Contents
 {:.no_toc}

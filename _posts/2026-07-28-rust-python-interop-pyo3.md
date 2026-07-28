@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "pickleDB ≠ pickledb: what PyO3 taught me about Python packaging"
+title: "Calling Rust from Python with PyO3"
 date: 2026-07-28 00:00:00 +0530
 categories: rust
 tags: [rust, python, pyo3, maturin, packaging]
@@ -8,7 +8,7 @@ author: "Seroze"
 published: true
 ---
 
-*I set out to write a Rust hash map and call it from Python. I ended up learning more about how Python resolves module names than about Rust itself — because of one character's case.*
+*I set out to write a Rust hash map and call it from Python. Getting the Rust right took an afternoon; getting it installed into the right virtualenv took longer.*
 
 This is a companion to [A primer on Rust](/primer-on-rust/) — that post covers the language, this one covers what happens when you try to ship it somewhere else.
 
@@ -35,12 +35,12 @@ Three macros do all the work:
 ```toml
 # Cargo.toml
 [package]
-name = "pickleDB"
+name = "pickledb"
 version = "0.1.0"
 edition = "2024"
 
 [lib]
-name = "pickleDB"
+name = "pickledb"
 crate-type = ["cdylib"]
 
 [dependencies]
@@ -55,7 +55,7 @@ pyo3 = { version = "0.22", features = ["extension-module"] }
 
 `maturin build --release` instead produces a `.whl` file on disk, meant to be installed into any venv, including ones in a completely different project.
 
-I needed the second one: the plan was to consume this from a separate `pickleDB-py-client` project.
+I needed the second one: the plan was to consume this from a separate `pickledb-py-client` project.
 
 ## First wall: the system says no
 
@@ -78,47 +78,12 @@ Here's the trap I fell into next. My shell prompt showed `(pickledb-py-client)`,
 
 The fix was boring on purpose: throw away the ambiguous state, create a clean venv, activate it, and confirm with `which` before touching pip at all.
 
-## pip says yes. Python says no.
+## The macro that has to be there
 
-Venv confirmed active, wheel installed cleanly. Then:
-
-```console
-$ python main.py
-ModuleNotFoundError: No module named 'pickledb'
-
-$ pip install ./pickledb-0.1.0-*.whl
-pickledb is already installed with the same version as the provided wheel.
-```
-
-That combination — pip insisting it's installed, Python insisting it can't find it — means the metadata and the actual importable file have quietly diverged. Time to stop guessing and look inside the artifact itself.
-
-## Cracking the wheel open
-
-A `.whl` is just a zip file. So:
-
-```console
-$ unzip -l pickledb-0.1.0-cp312-cp312-manylinux_2_34_x86_64.whl
-  Length  Name
-  ------  ----
-     115  pickleDB/__init__.py
-  605760  pickleDB/pickleDB.cpython-312-x86_64-linux-gnu.so
-      52  pickledb-0.1.0.dist-info/METADATA
-     109  pickledb-0.1.0.dist-info/WHEEL
-     504  pickledb-0.1.0.dist-info/RECORD
-```
-
-There's the bug, in plain sight.
-
-The wheel's `dist-info` — the part pip reads — gets its name normalized to lowercase per [PEP 503](https://peps.python.org/pep-0503/), regardless of what your crate is called. But the real importable package inside keeps whatever case you gave the `#[pymodule]` function: `pickleDB`, capital DB.
-
-pip was right that something called `pickledb` was installed. Python was right that nothing importable had that exact name. Linux filesystems and Python's `import` statement are both case-sensitive — `pickledb` and `pickleDB` are two different words to them.
-
-## A second bug, hiding under the first
-
-While tracking down the naming mismatch, a real compile-time bug turned up too: the `impl` block was missing `#[pymethods]`. Without it, `#[new]` and the dunder methods are just inert attributes on a plain Rust `impl` — PyO3 never sees them, and depending on the edition, rustc won't even compile it.
+One bug worth calling out, because it fails in a confusing way: the `impl` block was missing `#[pymethods]`. Without it, `#[new]` and the dunder methods are just inert attributes on a plain Rust `impl` — PyO3 never sees them, and depending on the edition, rustc won't even compile it.
 
 ```rust
-// src/lib.rs — corrected
+// src/lib.rs
 use pyo3::prelude::*;
 use std::collections::HashMap;
 
@@ -156,7 +121,7 @@ impl PickleDB {
 }
 
 #[pymodule]
-fn pickleDB(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn pickledb(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PickleDB>()?;
     Ok(())
 }
@@ -166,12 +131,12 @@ Worth noting how little ceremony the method bodies need: `Option<String>` become
 
 ## It works
 
-Rebuild, force-reinstall, and — importing under the correct case this time:
+Rebuild, install into the venv, and:
 
 ```console
 $ python -c "
-import pickleDB
-db = pickleDB.PickleDB()
+import pickledb
+db = pickledb.PickleDB()
 db.set('a', '1')
 print(db.get('a'))
 print(len(db))
@@ -182,11 +147,12 @@ print('a' in db)
 True
 ```
 
+Six lines of Python driving a Rust `HashMap`, with `len()` and `in` behaving exactly as they would on a native dict.
+
 ## What actually mattered
 
-- Wheel **distribution** names get PEP 503-normalized to lowercase; the **module** you actually import is not — they can silently diverge if your crate name has mixed case. The simplest defence is to keep crate names lowercase from the start.
 - `#[pymethods]` is what makes `#[new]` and dunder methods real in PyO3. A plain `impl` block is just Rust — PyO3 never looks at it.
-- pip reporting a package "already installed" only proves the *metadata* matches — it says nothing about whether the thing you'd actually import is present or correctly named. When in doubt, `unzip -l` the wheel.
+- `crate-type = ["cdylib"]` is non-negotiable. Without it you get a Rust library Python cannot load.
 - A shell prompt showing `(env-name)` is decoration, not evidence. `which python` / `which pip` is the only check that doesn't lie.
 - `maturin develop` is for iterating inside one project's venv. `maturin build` + `pip install <wheel>` is how a Rust extension crosses into a different project entirely.
 
