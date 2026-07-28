@@ -41,9 +41,9 @@ paginate_path: "/page:num/"
 markdown: kramdown
 kramdown:
   math_engine: mathjax
-  # Which heading levels appear in a `{:toc}` index. h2 only keeps it compact;
-  # widen to 2..3 to also list subsections.
-  toc_levels: 2..2
+  # Which heading levels appear in a `{:toc}` index. 2..3 lists sections and
+  # their subsections; narrow to 2..2 for a compact, top-level-only index.
+  toc_levels: 2..3
 
 # Exclude from processing.
 # The following items will not be processed, by default.
