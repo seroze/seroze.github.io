@@ -247,6 +247,134 @@ calculator/
 
 Many large projects — web frameworks, database engines, developer tools — are organized as workspaces, since they naturally split into several reusable crates.
 
+## Initializing objects
+
+Rust has no constructors. There's no special method the compiler calls, no `new` keyword, no initializer lists. A struct is built by writing out its fields, and everything else is convention layered on top of that.
+
+```rust
+struct Point {
+    x: i32,
+    y: i32,
+}
+
+let p = Point { x: 1, y: 2 };   // struct literal — this is the only primitive
+```
+
+Every field must be given a value. There's no partial initialization and no implicit zeroing, which is why "uninitialized field" bugs don't exist.
+
+**Field init shorthand.** When a local variable has the same name as the field, write it once:
+
+```rust
+let x = 1;
+let y = 2;
+let p = Point { x, y };   // same as Point { x: x, y: y }
+```
+
+### `new()` is a convention, not a keyword
+
+`String::new()`, `Vec::new()`, `HashMap::new()` — these are just associated functions someone chose to name `new`. Nothing in the language treats them specially:
+
+```rust
+impl Point {
+    fn new(x: i32, y: i32) -> Self {
+        Point { x, y }
+    }
+}
+
+let p = Point::new(1, 2);
+```
+
+`Self` is an alias for the type you're in, so `Point { x, y }` and `Self { x, y }` are interchangeable here. Since it's an ordinary function, you can have as many as you want with names that actually describe what they do — `Point::origin()`, `Vec::with_capacity(n)`, `String::from("hi")`.
+
+The `::` is doing the work described in the section on `::` below: there's no value to call a method on yet, so you go through the type.
+
+### `Default` and struct update syntax
+
+For a struct with many fields where most have an obvious zero value, derive `Default`:
+
+```rust
+#[derive(Default)]
+struct Config {
+    host: String,      // ""
+    port: u16,         // 0
+    verbose: bool,     // false
+    retries: u32,      // 0
+}
+
+let c = Config::default();
+```
+
+The derive requires every field's type to be `Default` itself. To override defaults per-field, use `#[derive(Default)]` together with **struct update syntax** — `..expr` fills in every field you didn't name:
+
+```rust
+let c = Config {
+    port: 8080,
+    verbose: true,
+    ..Default::default()
+};
+```
+
+The `..` must come last, and it moves out of the source value for any non-`Copy` field, so the thing on the right is usually a fresh `Default::default()` rather than a struct you still want to use.
+
+If the derived zero values are wrong for your type, write the impl by hand:
+
+```rust
+impl Default for Config {
+    fn default() -> Self {
+        Config { host: "localhost".into(), port: 8080, verbose: false, retries: 3 }
+    }
+}
+```
+
+### Other shapes
+
+```rust
+struct Meters(f64);          // tuple struct — constructed like a function call
+let d = Meters(3.5);
+let raw = d.0;
+
+struct Marker;               // unit struct — the name is the value
+let m = Marker;
+
+enum Shape {                 // enum variants construct the same way
+    Circle { r: f64 },
+    Square(f64),
+    Empty,
+}
+let s = Shape::Circle { r: 1.0 };
+```
+
+Tuple structs are the idiom for newtypes — wrapping a primitive to get a distinct type, so `Meters` and `Seconds` can't be swapped by accident even though both are an `f64` underneath.
+
+### Converting instead of constructing
+
+The other common way to get a value is to convert an existing one. Implement `From` and you get `Into` for free:
+
+```rust
+impl From<(i32, i32)> for Point {
+    fn from(t: (i32, i32)) -> Self {
+        Point { x: t.0, y: t.1 }
+    }
+}
+
+let p = Point::from((1, 2));
+let p: Point = (1, 2).into();   // same thing, type driven by the annotation
+```
+
+This is why `String::from("hi")` and `"hi".to_string()` and `"hi".into()` all exist and all work — one `From<&str> for String` impl, reached three ways.
+
+### When the field list gets long
+
+If construction has many optional parameters, the ecosystem's answer is a builder: a separate struct that accumulates settings and produces the real value at the end.
+
+```rust
+let c = Config::builder().port(8080).verbose(true).build();
+```
+
+Each method takes `self` and returns `Self`, which is what makes the chaining work. Worth knowing it exists, but don't reach for it early — `..Default::default()` covers most of what a builder would, with none of the boilerplate.
+
+**Rule of thumb:** struct literal by default, `new()` when there's real work or invariants to enforce, `Default` + `..` when most fields have sensible zeros, `From` when you're converting, builder only when the parameter list is genuinely unwieldy.
+
 ## `if` is an expression, not a statement
 
 A natural first attempt at a "which is bigger" function, coming from C/C++/Java, looks like this:
@@ -743,7 +871,7 @@ So anything owning a resource — `String`, `Vec`, `Box`, `File`, `Rc` (needs a 
 
 ## Interior mutability
 
-Both `Cell<T>` and `RefCell<T>` let you mutate through a `&T` instead of a `&mut T`. Both wrap `UnsafeCell` underneath, both are `!Sync`. The difference is how they keep aliasing safe.
+`Cell<T>`, `RefCell<T>` and `OnceCell<T>` all let you mutate through a `&T` instead of a `&mut T`. All three wrap `UnsafeCell` underneath, all three are `!Sync`. The difference is how they keep aliasing safe.
 
 ### `Cell`: move values in and out
 
@@ -774,16 +902,60 @@ let _b = rc.borrow_mut();  // panics: already borrowed
 
 Costs a word of storage plus a branch per borrow, and violations panic at runtime instead of failing to compile. `try_borrow` / `try_borrow_mut` return a `Result` if you'd rather handle it.
 
-|  | `Cell` | `RefCell` |
-|---|---|---|
-| Access | get/set whole value | `&`/`&mut` to interior |
-| Cost | free | borrow flag + check |
-| Failure | can't fail | panics on bad borrow |
-| Good for | small `Copy` types | large or non-`Copy` types |
+|  | `Cell` | `RefCell` | `OnceCell` |
+|---|---|---|---|
+| Access | get/set whole value | `&`/`&mut` to interior | `&` after first write |
+| Cost | free | borrow flag + check | one `Option` check |
+| Failure | can't fail | panics on bad borrow | second `set()` returns `Err` |
+| Good for | small `Copy` types | large or non-`Copy` types | write-once / lazy init |
 
 Rule of thumb: `Cell` first for `Copy` scalars, it's strictly cheaper and can't blow up. `RefCell` when you need to operate on the value in place, which is why `Rc<RefCell<T>>` is the standard shape for shared mutable graphs.
 
 If you hold a `&mut Cell<T>` or `&mut RefCell<T>`, both have `get_mut()`, which is free and statically checked. The runtime machinery only exists on the shared path. Thread-safe analogues are `Mutex` / `RwLock`.
+
+### `OnceCell`: write once, then it's frozen
+
+`OnceCell<T>` is the third shape, and it trades generality for something the other two can't do: it hands out a `&T` that stays valid.
+
+It starts empty and can be filled exactly once. After that the value never moves and never changes, so a plain reference to the interior is safe to give out — there's no possible mutation to alias against.
+
+```rust
+use std::cell::OnceCell;
+
+let cell: OnceCell<String> = OnceCell::new();
+
+assert!(cell.get().is_none());          // Option<&String>
+
+cell.set(String::from("hello")).unwrap();   // Ok(()) the first time
+assert!(cell.set(String::from("bye")).is_err());  // Err(value) — handed back
+
+let s: &String = cell.get().unwrap();   // a real reference, no guard, no Copy bound
+```
+
+`set` returns `Result<(), T>` — on failure you get your value back rather than losing it. The method you'll actually use most is `get_or_init`, which does the check-and-fill in one step:
+
+```rust
+struct Parser {
+    source: String,
+    tokens: OnceCell<Vec<Token>>,
+}
+
+impl Parser {
+    fn tokens(&self) -> &[Token] {          // &self, returns a borrow
+        self.tokens.get_or_init(|| tokenize(&self.source))
+    }
+}
+```
+
+Compare that to the `Cell<Option<u64>>` memoization example further down. `Cell` forces the cached type to be `Copy` and makes you return a copy every call; `OnceCell` caches a `Vec` and lends it out. That's the reason to reach for it: **lazily initialized fields behind `&self`**, where the cached thing is expensive or non-`Copy`.
+
+The catch is in the name — once. There's no `set` after the first, no invalidating the cache, no recomputation. If the value needs to change, you want `Cell` or `RefCell`.
+
+A few relatives worth knowing:
+
+- **`OnceLock<T>`** — the thread-safe version, in `std::sync`. Same API, blocks other threads racing to initialize. This is what you want for a global (`static CONFIG: OnceLock<Config> = OnceLock::new();`), since `OnceCell` is `!Sync` and can't be a `static`.
+- **`LazyCell<T, F>` / `LazyLock<T, F>`** — the initializer is baked in at construction, so it fires on first deref instead of at an explicit `get_or_init` call. `LazyLock` is the modern replacement for the `lazy_static!` and `once_cell::sync::Lazy` you'll see in older code.
+- The **`once_cell` crate** predates all of these. It's still common in the wild, but for new code the standard library versions are stable and there's no reason to take the dependency.
 
 ### Passing them around
 
@@ -863,6 +1035,23 @@ Also `Cell<Option<Box<Node>>>` for unlinking nodes in linked structures behind a
 One footgun with `take()`: while you hold the value, the cell contains `T::default()`. Anything that reaches back into that cell mid-operation sees an empty value instead of the real one. `RefCell` would panic loudly in the same situation, which is sometimes what you want.
 
 For non-`Copy` types `RefCell` is usually nicer anyway — `self.pending.borrow_mut().push(e)` beats the take-push-set dance. `Cell<T>` for non-`Copy` shines specifically when the operation *is* a move: take it, swap it, hand it off.
+
+### It's `UnsafeCell` all the way down
+
+Every type in this section — `Cell`, `RefCell`, `OnceCell`, and their `sync` counterparts `Mutex`, `RwLock`, `OnceLock` — is a safe wrapper around the same primitive: `UnsafeCell<T>`.
+
+That matters because mutating through a shared reference isn't something you can build yourself out of ordinary Rust. `&T` carries a hard guarantee to the optimizer that the pointee won't change, and the compiler emits `noalias` on that basis. `UnsafeCell<T>` is the *only* thing in the language that opts out of it — it's a compiler-recognized lang item, not a clever library trick.
+
+So the whole hierarchy is one unsafe primitive plus different strategies for keeping the aliasing honest:
+
+| Wrapper | Strategy |
+|---|---|
+| `Cell` | never hand out a reference at all |
+| `RefCell` | count borrows at runtime, panic on conflict |
+| `OnceCell` | allow one write, then it's immutable |
+| `Mutex` / `RwLock` | block other threads |
+
+Each one takes on the obligation of proving the aliasing rules hold, so your code doesn't have to. Writing a *correct* wrapper is genuinely hard — I'll do a full post on `UnsafeCell`, `noalias`, and what the compiler is actually promising soon.
 
 ## Deref coercion
 
