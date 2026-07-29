@@ -274,3 +274,29 @@ anyway.** Waiting for unannounced hardware is how you spend a year not learning 
 
 That's the whole build. MS-02 Ultra barebones, my existing RAM and SSD, a Gen5 MCIO riser out to
 one refurb card running at full x16, and a cloud bill for anything that doesn't fit.
+
+---
+
+## Update: switching to a full build
+
+While actually placing the order, I noticed the **MS-02 Ultra** is a frequently returned item —
+enough of a pattern that I don't want to gamble on it sight unseen. So I'm changing course: instead
+of the MS-02 Ultra barebones, I'm going with the **Minisforum BD895i SE** motherboard and doing a
+full build around it myself.
+
+The wifi bracket and antennas come with the motherboard, so the only networking piece left to buy
+is the card itself. Still need to pick up:
+
+- **Noctua NF-F12-PWM** — 120×120×25mm, 4-pin, 1500 RPM case fan
+- **Zotac Gaming Alloy M-ATX Mini Tower Case** — from mdcomputers
+- A **200–400W PSU**, ideally used
+- **Intel WiFi AX210** card
+- **ZORBES M.2 2280 aluminum NVMe heatsink** — aluminum build with a silicone pad; if I can fit
+  it, I'd like to get a small fan blowing across it too rather than relying on passive cooling
+  alone. It'd be great if I could instead just get the **ZORBES® M.2 2280 SSD Heatsink with RGB
+  Fan** — dual cooling, aluminum fins, addressable RGB synced lighting, 5×5×1cm — since that
+  bundles the fan onto the heatsink itself instead of me having to rig one up separately
+
+The RAM and SSD I already have carry over unchanged. Whether the eGPU-over-MCIO plan above still
+applies depends on what the BD895i SE actually exposes — that's worth revisiting once the board is
+in hand.
