@@ -54,6 +54,12 @@ Things worth trying, roughly in order of how easy they are:
 
 The uncomfortable possibility is that this isn't fixable from the Windows side at all, and it's the monitor cutting hub power on standby with no way to turn that off. In that case the workarounds are a powered USB hub that doesn't depend on the monitor, or simply not powering the monitor off.
 
+## The Case of the Missing RTX 5080
+
+The ProArt stopped waking over HDMI, and Task Manager showed only the Intel iGPU — the RTX 5080 had seemingly vanished. About 1.5 hours in, `Get-PnpDevice -Class Display` showed the GPU was still on the bus, just in an `Error` state with `Problem: CM_PROB_DISABLED` — Code 22, simply disabled in Device Manager (likely a misclick during earlier Wi-Fi troubleshooting). `Enable-PnpDevice` on it brought the monitor straight back.
+
+**Lesson:** check `Get-PnpDevice` error codes before reaching for reboots or resets — a disabled device survives all of them.
+
 ## Still to investigate
 
 - [ ] Whether the Wi-Fi fix actually holds over a couple of weeks.
