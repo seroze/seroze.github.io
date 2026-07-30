@@ -227,3 +227,61 @@ a small one:
 25 Gbps is the point where the link stops being the obvious first bottleneck without requiring
 data-center-grade everything else around it — which is exactly the trade-off a disaggregated home
 lab needs to get right before anything else about the storage design matters.
+
+---
+
+## The rest of the mini-cloud stack
+
+The NIC is only the piece that made me stop and do the arithmetic. Once you're actually planning a
+disaggregated setup, a few other things fall out of that same design decision and are worth
+capturing here.
+
+### The switch is part of the equation, not just the NIC
+
+A fast NIC on both ends means nothing if the link between them is slower:
+
+```
+100 Gbps NIC
+      |
+ 10 Gbps switch
+      |
+100 Gbps NIC
+```
+
+That path still tops out at **10 Gbps** — the slowest component in the chain sets the ceiling for
+the whole path, full stop. It's an obvious point once stated, but easy to forget when you're
+pricing NICs and treating the switch as an afterthought. A realistic small setup instead looks
+like a NIC-per-server speed matched to a Top-of-Rack switch at the same speed, with a faster
+uplink between switches so that switch-to-switch traffic isn't the next bottleneck down the line
+— e.g. 25 Gbps to each server, 100 Gbps between switches. The whole point of the exercise is
+making sure storage traffic never becomes the thing everything else waits behind.
+
+### How many VMs actually fit on one host?
+
+There's no fixed number — it depends on the workload — but in practice **RAM runs out well before
+CPU does**, so RAM is usually the first constraint to size against, with CPU a close second.
+
+For a host with 32 cores, 256 GB RAM, and a 25 Gbps NIC, a realistic density for small VPS-sized
+instances is roughly **50–100 VMs**. Large cloud providers push this much further — servers with
+hundreds of cores and terabytes of RAM can host several hundred lightweight VMs — but the ratio
+that matters (RAM per VM, then cores per VM) stays the same idea at any scale.
+
+### Thin provisioning
+
+One storage detail that makes the density numbers above work out: a customer can be sold a
+100 GB virtual disk while only 4 GB of it is actually written to real storage. Space gets
+allocated as data lands, not up front for the full advertised size. It's the same idea as
+overselling seats on a flight, applied to disk — and it's a big part of why disaggregated storage
+clusters can serve more virtual capacity than they physically hold.
+
+---
+
+## Key takeaway
+
+Building this isn't really about "running some VMs." It's compute (KVM), networking (NICs,
+switches), distributed storage (Ceph), Kubernetes, scheduling, and monitoring, all leaning on each
+other — and the network sits right in the middle of that, not off to the side.
+
+> Once storage becomes disaggregated, the network effectively becomes part of your storage
+> subsystem. Choosing the right NICs and switches isn't just a networking decision anymore — it's
+> directly tied to storage performance and how far the whole thing scales.
