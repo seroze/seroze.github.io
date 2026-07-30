@@ -156,7 +156,10 @@ table {
 
 .theme-toggle {
   float: right;
-  margin: 17px 0 0 20px;
+  // Matches the 20px gap minima puts between the nav's own page-links, so the
+  // toggle reads as one more item in that row instead of a separate element
+  // crowding "About".
+  margin: 17px 20px 0 0;
   padding: 6px;
   width: 32px;
   height: 32px;
