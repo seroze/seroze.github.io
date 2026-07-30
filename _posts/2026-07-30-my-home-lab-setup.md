@@ -309,6 +309,16 @@ fundamental hardware concepts worth understanding.
   involving many small random reads and writes are typically limited by IOPS and latency rather
   than raw bandwidth.
 
+- **Throughput and IOPS are related, not independent.** Roughly:
+
+  $$\text{Throughput} \approx \text{IOPS} \times \text{Average IO Size}$$
+
+  At 1,000,000 IOPS with 4 KB requests, that's 4 GB/s. But the same 1,000,000 IOPS with 1 MB
+  requests would imply 1,000,000 MB/s — which is impossible; the SSD saturates its throughput
+  ceiling long before it gets anywhere near that IOPS number. So which metric actually limits a
+  workload depends on request size: **small IO → IOPS matters**, **large IO → throughput
+  matters**.
+
 ---
 
 ## Key takeaway
