@@ -276,6 +276,41 @@ clusters can serve more virtual capacity than they physically hold.
 
 ---
 
+## Power Supplies and Storage Basics
+
+While learning about storage systems and building home servers, I realized there were a few
+fundamental hardware concepts worth understanding.
+
+- A **Power Supply Unit (PSU)** converts the **230V AC** from a wall socket into the stable
+  low-voltage **DC** rails (12V, 5V, 3.3V, etc.) required by computer components. An **850W PSU**
+  doesn't always consume 850W — it simply means it can safely supply up to 850W if the system
+  demands it. Laptop chargers are essentially external PSUs that usually output a single DC
+  voltage (e.g., ~20V), which the laptop further converts internally.
+
+- **SATA III** provides **6 Gbps (Gigabits/sec)** of interface bandwidth, which translates to
+  roughly **550 MB/s** of usable throughput after overhead — not **6 GB/s**. Modern **NVMe SSDs**
+  communicate over PCIe instead of SATA and can reach **7 GB/s+** on PCIe Gen4 and even higher on
+  PCIe Gen5.
+
+- The operating system is **not loaded entirely into RAM during boot**. The firmware loads a
+  bootloader, which loads the kernel, after which the OS continuously loads executables,
+  libraries, drivers, and other resources **on demand**. Frequently accessed files are cached in
+  memory, while less-used pages are fetched from storage when needed.
+
+- Storage performance is characterized by three key metrics:
+  - **Throughput (MB/s or GB/s):** How much data can be transferred per second.
+  - **IOPS (Input/Output Operations Per Second):** How many individual read or write requests can
+    be completed per second, especially important for small random accesses.
+  - **Latency:** The time taken to complete a single I/O request.
+
+- **Read IOPS** and **Write IOPS** are measurements rather than hardware constants. They represent
+  the number of completed read and write operations per second, respectively. Operating systems,
+  databases, and distributed storage systems such as Ceph monitor these metrics because workloads
+  involving many small random reads and writes are typically limited by IOPS and latency rather
+  than raw bandwidth.
+
+---
+
 ## Key takeaway
 
 Building this isn't really about "running some VMs." It's compute (KVM), networking (NICs,
