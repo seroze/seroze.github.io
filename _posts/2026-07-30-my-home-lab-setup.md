@@ -321,6 +321,115 @@ fundamental hardware concepts worth understanding.
 
 ---
 
+## End-to-End Journey of a YouTube Video
+
+One of the most useful mental models I learned was tracing the complete journey of a streamed
+video frame — from Google's servers all the way to the monitor.
+
+```text
+Google CDN (compressed video)
+        │
+        ▼
+Internet
+        │
+        ▼
+ISP
+        │
+        ▼
+Home Router
+        │
+        ▼
+Ethernet / Wi-Fi
+        │
+        ▼
+Network Interface Card (NIC)
+        │
+        ▼
+Kernel Networking Stack
+(TCP/IP processing)
+        │
+        ▼
+Browser Socket Buffer (RAM)
+        │
+        ▼
+YouTube Player Buffer (RAM)
+        │
+        ▼
+Video Decoder
+(Usually dedicated GPU hardware such as AV1/VP9 decode)
+        │
+        ▼
+Decoded Frames in GPU Memory
+        │
+        ▼
+GPU Compositor / Renderer
+        │
+        ▼
+Display Engine
+        │
+        ▼
+Monitor
+```
+
+A few important observations:
+
+- The video travels over the internet **in a compressed format** (AV1, VP9, H.264, etc.) to
+  minimize bandwidth.
+- The **NIC performs DMA (Direct Memory Access)**, placing incoming packets directly into system
+  RAM instead of copying them through the CPU — the NIC writes straight into RAM without the CPU
+  being involved in the transfer itself.
+- The browser maintains a **playback buffer** in RAM (shown as *Buffer Health* in YouTube's *Stats
+  for nerds*), allowing playback to continue even if the network experiences brief slowdowns.
+- Dedicated **GPU video decoding hardware** decompresses the video into raw frames. This is
+  different from the GPU's 3D rendering cores and is optimized specifically for video codecs.
+- Finally, the GPU composites the decoded frames and sends them through the display engine to the
+  monitor.
+
+One question I found particularly interesting was: **Why isn't the video streamed directly into
+the CPU cache?**
+
+The answer is that CPU caches are tiny, hardware-managed, and optimized for accelerating
+computation — not for storing large streaming buffers. Network devices use **DMA** to transfer
+data directly into **system RAM**, and only the portions of memory actively accessed by the CPU
+are automatically brought into the cache hierarchy.
+
+## Reinforcing the Fundamentals
+
+To test my understanding, I tried reasoning through a series of hardware and storage questions
+instead of relying on definitions. Some of the key takeaways were:
+
+- A PSU's wattage represents its **maximum delivery capacity**, not its constant power output.
+  Components draw only the power they need, regardless of whether the PSU is rated for 850W or
+  1600W.
+- The performance difference between **SATA SSDs and NVMe SSDs** is largely due to the storage
+  interface and protocol (SATA/AHCI vs. PCIe/NVMe), not necessarily because the NAND flash itself
+  is different.
+- **IOPS** and **throughput** measure different aspects of storage performance. Small random I/O
+  workloads are typically IOPS-bound, while large sequential transfers are throughput-bound. A
+  useful mental model is: **Throughput ≈ IOPS × Average I/O Size**.
+- Modern operating systems continue to access the SSD long after boot through mechanisms such as
+  demand paging, loading executables and shared libraries, memory-mapped files, and application
+  data.
+- The **page cache** keeps recently accessed disk pages in RAM, which explains why reopening an
+  application is often significantly faster than launching it for the first time.
+- While debugging YouTube playback, I learned that the **actual connection speed to YouTube's
+  CDN**, rather than my ISP's advertised bandwidth, determines whether an 8K stream buffers.
+- **Buffer Health** proved to be a valuable diagnostic metric. If it steadily drops to zero, the
+  network is not keeping up with playback. If it remains healthy while playback stutters, the
+  bottleneck is more likely decoding, rendering, or the browser.
+- Video compression is far more sophisticated than simply reducing quality. Modern codecs exploit
+  temporal and spatial redundancy, motion vectors, and other techniques to reduce an uncompressed
+  8K HDR stream from tens of gigabits per second to only a few dozen megabits per second.
+- In distributed storage systems such as Ceph, using **NVMe as a cache for hot data** can
+  dramatically improve performance while keeping the bulk of the data on high-capacity HDDs.
+- Finally, I reinforced the end-to-end path of streamed data: it travels from the content server
+  through the network and NIC into RAM, is decoded (typically by dedicated GPU hardware), and then
+  rendered to the display. Data isn't streamed directly into CPU caches — they're small,
+  hardware-managed, and designed to accelerate computation rather than serve as large streaming
+  buffers.
+
+---
+
 ## Key takeaway
 
 Building this isn't really about "running some VMs." It's compute (KVM), networking (NICs,
