@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "Home Lab"
+title: "Building my first PC"
 date: 2026-07-25 00:00:00 +0530
 categories: hardware
 tags: [hardware, homelab, gpu, local_llm]
