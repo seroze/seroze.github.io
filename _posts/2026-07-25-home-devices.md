@@ -12,6 +12,18 @@ published: true
 
 ---
 
+## Current setup
+
+Before getting into the lab plan, here's what I'm actually using day to day right now:
+
+- **Laptop:** HP Omen Max 2025 — Intel Core Ultra 9 275HX, RTX 5080
+- **Monitor:** ASUS 27" 5K (PA27JCV — double-check this model code)
+- **Mouse:** Logitech M650L
+- **Keyboard:** Dell basic office keyboard — does the job, but it has a numpad and I'd prefer a
+  tenkeyless board; the extra width just pushes the mouse further out than I'd like.
+
+---
+
 ## The plan
 
 After lots and lots of consideration, I've settled on the **MS-02 Ultra** platform.
