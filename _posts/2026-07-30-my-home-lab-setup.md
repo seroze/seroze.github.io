@@ -430,6 +430,42 @@ instead of relying on definitions. Some of the key takeaways were:
 
 ---
 
+## PCIe, DDR, Bus Width, and Cache Lines
+
+One concept that finally made all the bandwidth numbers click for me was understanding **bus
+width**.
+
+PCIe and DDR both advertise their speed in **Transfers per Second**, but the amount of data moved
+in each transfer is completely different.
+
+- **PCIe 5.0** advertises **32 GT/s** (32 billion transfers per second) **per lane**. A PCIe lane
+  is a **serial link**, so each transfer effectively carries one bit before encoding is
+  considered. After accounting for 128b/130b encoding and converting bits to bytes, a single
+  PCIe 5.0 lane delivers about **4 GB/s**. A x16 slot simply combines sixteen such lanes, giving
+  roughly **64 GB/s**.
+
+- **DDR5-5600** advertises **5600 MT/s** (5600 million transfers per second). Unlike PCIe, a DDR
+  memory channel has a **64-bit (8-byte) data bus**. Every transfer moves **64 bits (8 bytes)**
+  simultaneously. Therefore:
+
+  $$5600 \text{ MT/s} \times 8 \text{ bytes} = 44.8 \text{ GB/s per memory channel}$$
+
+The important takeaway is that **"Transfers per second" tells you how often data moves, while the
+bus width tells you how much data moves each time.**
+
+This also ties into another important concept: **RAM is byte-addressable but not
+byte-transferable.** Although software can read or write a single byte, the memory controller
+communicates with DRAM in much larger chunks over its 64-bit-wide interface. In practice, the CPU
+almost always fetches an entire **cache line (typically 64 bytes on modern x86 processors)**. Even
+if a program requests a single byte, the hardware transfers the entire cache line into the CPU
+cache because nearby data is likely to be accessed next (spatial locality).
+
+This connection between **bus width → memory bandwidth → cache lines** helped me understand why
+modern CPUs can sustain such enormous data rates despite individual loads and stores in software
+appearing to operate on only a few bytes at a time.
+
+---
+
 ## Key takeaway
 
 Building this isn't really about "running some VMs." It's compute (KVM), networking (NICs,

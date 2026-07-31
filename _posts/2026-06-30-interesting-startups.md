@@ -28,6 +28,14 @@ Archil builds a distributed filesystem for AI agents — infinite storage that m
 
 ---
 
+## [Beluga](https://www.trybeluga.ai/team)
+
+Beluga is building creator marketing tooling that aims to make influencer campaigns "as measurable and easy to run as paid ads" — combining campaign management with AI-driven creator matching and optimization to cut the guesswork out of picking who to work with. The founding team spent six years at Dare Drop selling, managing, and scaling creator campaigns across thousands of creators and millions in ad spend before building Beluga to systematize what they learned. Backed by Y Combinator.
+
+**Use case:** brands and agencies running influencer campaigns who currently pick creators on gut feel — Beluga's matching and optimization layer gives them the same kind of measurability paid ads already have.
+
+---
+
 ## [Bottlecap](https://www.bottlecapai.com/)
 
 Bottlecap makes existing AI models more efficient rather than building new ones — fine-tuning them to cut out wasted internal reasoning while preserving capability. Their [ThinkingCap Qwen3.6-27B](https://www.bottlecapai.com/thinkingcap-qwen3-6-27b) is a fine-tune of Qwen's 27B model that uses roughly half the thinking tokens of the base version: across 12 out-of-domain benchmarks it cuts tokens by 45.8% with only a 0.7-point accuracy drop, and on in-domain knowledge tasks it cuts 57.7% of tokens while actually *gaining* 1.0 point of accuracy. Fewer tokens means lower latency, lower cost, and less reasoning stuck in loops. The model is open under Apache 2.0 on HuggingFace.
