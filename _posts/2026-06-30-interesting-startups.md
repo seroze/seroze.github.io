@@ -44,6 +44,24 @@ Bottlecap makes existing AI models more efficient rather than building new ones 
 
 ---
 
+## [Core Automation](https://www.coreauto.com/)
+
+Core Automation is betting that the transformer architecture itself is the bottleneck to smarter, continuously-learning AI — so they're building new learning algorithms and architectures meant to outperform large-scale pretraining as we know it, starting by automating the research process itself. Co-founded by **Rohan Anil**, who led pretraining on Gemini at Google DeepMind (leaving as a Distinguished Engineer for his contributions there) before a stint at Anthropic, alongside Jerry Tworek (former OpenAI VP who led the reasoning/Strawberry and RL teams) and Joanne Jang.
+
+**Use case:** worth watching for anyone tracking whether post-transformer architectures actually ship, given the team has firsthand experience scaling the thing they're now betting against.
+
+---
+
+## [exe.dev](https://exe.dev/) ([blog](https://blog.exe.dev/))
+
+exe.dev (from Bold Software) provisions Linux micro-VMs over SSH — Sandbox (disposable, for AI agents), VPS (persistent), and Devbox (cloud dev environments), each reachable at `<vm>.exe.xyz` with automatic TLS. Using Kata Containers + Cloud Hypervisor gets them sub-second container-like start times while keeping real kernel isolation and a persistent disk — root access, `apt`, `systemd`, the works. $35M Series A backed by Amplify Partners, CRV, and HeavyBit.
+
+Their engineering blog is what makes them worth flagging: real systems-level problems written up in public — sharing IPs across VMs without breaking SSH ("SSH Has No Host Header"), shipping features without dropping live network connections, proxying secrets for third-party integrations safely, and the economics of LLM agent inference cost at scale.
+
+**Use case:** worth watching for the infra work alone — and a promising place to work if you like virtualization, networking, and distributed-systems problems that show up the moment "give an AI agent its own computer" has to work at scale.
+
+---
+
 ## [Flapping Airplanes](https://flappingairplanes.com/)
 
 *(description coming soon)*
