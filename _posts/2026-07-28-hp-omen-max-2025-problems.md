@@ -67,3 +67,7 @@ The ProArt stopped waking over HDMI, and Task Manager showed only the Intel iGPU
 - [ ] Whether the ProArt has an OSD setting for USB-in-standby, and what it's called.
 - [ ] Whether either problem behaves differently on battery vs. plugged in.
 - [ ] Whether a BIOS or HP firmware update addresses either.
+
+## Changelog
+
+**2026-08-02** — The Wi-Fi vanishing act happened again, mid-LLM-training-run. Found [an r/HPOmen thread](https://www.reddit.com/r/HPOmen/comments/1tvwgkm/intel_wifi_7_be200_randomly_disconnects_and/) describing an almost exact match: Intel Wi-Fi 7 BE200 randomly disconnecting on the same laptop. Turned out my `.wslconfig` had `networkingMode=nat` — WSL2's NAT stack deadlocks when the adapter drops, which likely explains why my crashes were so severe (frozen Device Manager, hung `wlansvc`, hung restarts) rather than a normal blip. Switched it to `networkingMode=mirrored`. I don't recall why I'd set it to NAT in the first place — probably to get Tailscale working — but I've since uninstalled Tailscale anyway, so no conflict there. Monitoring for a week before calling this fixed.
