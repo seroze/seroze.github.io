@@ -303,7 +303,9 @@ is the card itself. Still need to pick up:
 - **Zotac Gaming Alloy M-ATX Mini Tower Case** — from mdcomputers
 - ~~A **200–400W PSU**, ideally used~~ **Update:** going with the
   [**MSI MAG A1000GL 1000W PCIe5 ATX 3.1 PSU**](https://www.pcstudio.in/product/msi-mag-a1000gl-1000-watt-pcie5-atx-3-1-power-supply/)
-  instead — PC Studio has the lowest price on it at the moment. It's 80 Plus Gold, ATX 3.1, with a
+  instead — PC Studio has the lowest price on it at the moment, around **₹14k**. Buying it local
+  and brand new — a PSU is the one part where a dodgy unit takes everything else down with it, so
+  no used or imported units here. It's 80 Plus Gold, ATX 3.1, with a
   native PCIe5 (12V-2x6) connector, so no adapter dongles for a modern GPU. Massively oversized for
   the board alone, but that's the point: 1000W means the GPU plan is no longer capped at a
   5070 Ti/5080 — I can switch up to an **RTX 5090** on this same supply without touching anything
