@@ -301,7 +301,13 @@ is the card itself. Still need to pick up:
 
 - **Noctua NF-F12-PWM** — 120×120×25mm, 4-pin, 1500 RPM case fan
 - **Zotac Gaming Alloy M-ATX Mini Tower Case** — from mdcomputers
-- A **200–400W PSU**, ideally used
+- ~~A **200–400W PSU**, ideally used~~ **Update:** going with the
+  [**MSI MAG A1000GL 1000W PCIe5 ATX 3.1 PSU**](https://www.pcstudio.in/product/msi-mag-a1000gl-1000-watt-pcie5-atx-3-1-power-supply/)
+  instead — PC Studio has the lowest price on it at the moment. It's 80 Plus Gold, ATX 3.1, with a
+  native PCIe5 (12V-2x6) connector, so no adapter dongles for a modern GPU. Massively oversized for
+  the board alone, but that's the point: 1000W means the GPU plan is no longer capped at a
+  5070 Ti/5080 — I can switch up to an **RTX 5090** on this same supply without touching anything
+  else in the build
 - **Intel WiFi AX210** card
 - **ZORBES M.2 2280 aluminum NVMe heatsink** — aluminum build with a silicone pad; if I can fit
   it, I'd like to get a small fan blowing across it too rather than relying on passive cooling
