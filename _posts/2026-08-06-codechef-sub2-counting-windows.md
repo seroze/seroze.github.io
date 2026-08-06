@@ -9,7 +9,8 @@ published: true
 ---
 
 [SUB2 (Subsequence 2)](https://www.codechef.com/problems/SUB2) is the sequel to
-[SUB1]({{ site.baseurl }}/codechef-sub1-chains-not-cuts/). Same $$f$$: the largest $$L$$ such that
+[SUB1 (Subsequence 1)](https://www.codechef.com/problems/SUB1), which I wrote up
+[in the previous post]({{ site.baseurl }}/codechef-sub1-chains-not-cuts/). Same $$f$$: the largest $$L$$ such that
 $$1, 2, \dots, L$$ is a subsequence of the array. But instead of splitting the array, you sum $$f$$ over
 every subarray:
 
