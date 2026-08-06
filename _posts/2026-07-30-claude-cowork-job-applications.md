@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "[Agents] Claude Cowork, Job Applications, and Hidden Prompt-Injection Markers"
+title: "Using Claude Cowork for job applications and the road blocks with hidden prompt injection"
 date: 2026-07-30 00:00:00 +0530
 categories: machine-learning
 tags: [ai_agents, prompt_injection, browser_automation, job_search]
