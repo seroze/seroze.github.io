@@ -3,7 +3,7 @@ layout: post
 title: "People to follow in LLM architecture research"
 date: 2026-08-03 00:00:00 +0530
 categories: llm
-tags: [llm, architecture_research, twitter, ai_research]
+tags: [llm, llm_architecture_research, twitter, ai_research]
 author: "Seroze"
 published: true
 ---
