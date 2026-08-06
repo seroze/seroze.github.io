@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "[CodeChef] SUB1 — Chains, not cuts"
+title: "[CodeChef] Starters 250 — Subsequence 1: Chains, not cuts"
 date: 2026-08-06 00:00:00 +0530
 categories: competitive-programming
 tags: [competitive_programming, dynamic_programming, greedy, codechef]

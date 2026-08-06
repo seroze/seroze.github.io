@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "[Leetcode] Fence Width Optimization — From O(n³) to O(n²)"
+title: "[Leetcode] Biweekly 188 — Fence Width Optimization: From O(n³) to O(n²)"
 date: 2026-08-01 00:00:00 +0530
 categories: competitive-programming
 tags: [competitive_programming, leetcode, counting, hash_maps, complexity_analysis]

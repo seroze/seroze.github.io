@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "[CodeChef] MAJIK — Wishcraft"
+title: "[CodeChef] Starters 105 — Wishcraft"
 date: 2026-08-03 00:00:00 +0530
 categories: competitive-programming
 tags: [competitive_programming, codechef, greedy, sorting]

@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "[Leetcode] Minimum Possible Maximum Waiting Time"
+title: "[Leetcode] Biweekly 188 — Minimum Possible Maximum Waiting Time"
 date: 2026-08-01 00:00:00 +0530
 categories: competitive-programming
 tags: [competitive_programming, leetcode, dynamic_programming, binary_search, scheduling]
