@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "[CodeChef] Reach Anywhere — finding shortest odd and even parity distances"
+title: "[CodeChef] Starters 106 — Reach Anywhere: finding shortest odd and even parity distances"
 date: 2026-08-07 00:00:00 +0530
 categories: competitive-programming
 tags: [competitive_programming, codechef, graphs, bfs, shortest_paths]
