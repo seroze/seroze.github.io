@@ -777,6 +777,80 @@ A trait is a set of behaviours a type can implement — closest to an interface 
 
 Reading bounds fluently is most of what makes standard library signatures stop looking cryptic.
 
+### The traits you'll actually meet
+
+Open any real Rust codebase and the same few dozen traits account for nearly everything. Worth knowing by name, grouped by what they're for:
+
+**Derivable — you'll see these in `#[derive(...)]` constantly**
+
+| Trait | What it gives you |
+|---|---|
+| `Debug` | `{:?}` formatting. Derive it on essentially every type. |
+| `Clone` | Explicit, possibly-expensive duplication via `.clone()` |
+| `Copy` | Implicit bitwise duplication (no `.clone()` call needed) |
+| `Default` | `T::default()` and `..Default::default()` |
+| `PartialEq` / `Eq` | `==` and `!=` |
+| `PartialOrd` / `Ord` | `<`, `>`, `sort()`, `BTreeMap` keys |
+| `Hash` | `HashMap` / `HashSet` keys |
+
+**Conversion**
+
+| Trait | What it gives you |
+|---|---|
+| `From<T>` / `Into<T>` | Infallible conversion. Implement `From`, get `Into` free. |
+| `TryFrom<T>` / `TryInto<T>` | Fallible conversion, returns `Result` |
+| `FromStr` | `"42".parse::<T>()` |
+| `AsRef<T>` / `AsMut<T>` | Cheap reference-to-reference conversion; why `fn open(p: impl AsRef<Path>)` accepts `&str`, `String`, and `PathBuf` alike |
+| `Borrow<T>` | Like `AsRef` but promises `Eq`/`Hash` agree — why `map.get("k")` works on a `HashMap<String, V>` |
+| `ToOwned` | The `&str → String` direction; the trait behind `Cow` |
+
+**Formatting and errors**
+
+| Trait | What it gives you |
+|---|---|
+| `Display` | `{}` formatting — the human-facing message. Never derivable. |
+| `Error` | Marks a type as an error; enables `Box<dyn Error>` and `?` interop |
+
+**Iteration**
+
+| Trait | What it gives you |
+|---|---|
+| `Iterator` | `next()`, plus the ~70 adapters that come free with it |
+| `IntoIterator` | What `for x in thing` desugars to |
+| `FromIterator` | What `.collect::<T>()` requires of `T` |
+| `Extend` | `.extend(iter)` on an existing collection |
+
+**Ownership, pointers, lifecycle**
+
+| Trait | What it gives you |
+|---|---|
+| `Drop` | A destructor. Runs at scope exit; mutually exclusive with `Copy`. |
+| `Deref` / `DerefMut` | Smart-pointer transparency and deref coercion (below) |
+| `Sized` | Implicit on every generic parameter; opt out with `?Sized` |
+
+**Concurrency**
+
+| Trait | What it gives you |
+|---|---|
+| `Send` | The type can move to another thread |
+| `Sync` | `&T` can be shared across threads |
+
+Both are auto-traits — the compiler implements them for you when all fields qualify. You almost never write these; you read them in error messages.
+
+**Operators and callables**
+
+| Trait | What it gives you |
+|---|---|
+| `Add`, `Sub`, `Mul`, `Neg`, ... (`std::ops`) | Operator overloading |
+| `Index` / `IndexMut` | `x[i]` |
+| `Fn` / `FnMut` / `FnOnce` | Closures, in decreasing order of restriction |
+
+**Ecosystem traits you'll hit within a week**
+
+`Serialize` / `Deserialize` (serde), `Read` / `Write` / `BufRead` (`std::io`), `Future` (async), `Any` (runtime downcasting).
+
+Two rules of thumb. **Derive `Debug` on everything**, and `Clone`/`PartialEq`/`Eq`/`Hash` whenever they're free — derives cost nothing at runtime and unlock APIs you didn't anticipate needing. And **take the trait, not the type**, in signatures: `impl AsRef<Path>` over `&Path`, `impl IntoIterator<Item = T>` over `Vec<T>`, `impl Display` over `String`.
+
 ### `Default`
 
 `Default` is the trait for types that know how to produce a sensible zero value — `0` for integers, `""` for `String`, `None` for `Option`, an empty `Vec`. You get it via `T::default()`.
@@ -851,6 +925,118 @@ read it as:
 
 > "This function only works for types that know how to create a default value using `T::default()`."
 
+### `PartialEq` and `Eq` — one method, two promises
+
+`==` desugars to exactly one thing: `PartialEq::eq(&a, &b)`. That's the trait with the actual code in it. For a struct whose fields are all comparable, derive it and you get field-by-field comparison:
+
+```rust
+#[derive(Debug, PartialEq)]
+struct User {
+    id: u64,
+    name: String,
+}
+```
+
+`Eq`, by contrast, is this in full:
+
+```rust
+pub trait Eq: PartialEq<Self> {}
+```
+
+An empty marker trait. It defines no methods and changes nothing about what runs at the call site — `a == b` still calls `PartialEq::eq`, whether or not `Eq` is implemented. What `Eq` does is let *other* APIs demand a stronger promise as a bound. `HashMap`, `HashSet`, `BTreeMap` and `Ord` all require `Eq`, because their internals would misbehave if a key weren't equal to itself.
+
+**The three axioms.** `PartialEq` asks for two:
+
+- **Symmetry** — if `a == b` then `b == a`
+- **Transitivity** — if `a == b` and `b == c` then `a == c`
+
+`Eq` asks for those plus a third:
+
+- **Reflexivity** — `a == a` holds for *every* value, no exceptions
+
+That third one is the entire difference, and floats are the reason it's carved out. `f64::NAN == f64::NAN` is `false` by IEEE 754 design: `NaN` means "this result is meaningless," and two meaningless results aren't equal. Note precisely which axiom that breaks — symmetry is fine (`NaN == NaN` is consistently `false` in both directions) and transitivity is fine (no chain of equalities leads to a contradiction, since `NaN` is equal to nothing at all). Only reflexivity fails. That single broken guarantee is why `f32`/`f64` implement `PartialEq` but not `Eq`, and it propagates: any struct with a float field can derive `PartialEq` but not `Eq`.
+
+Integers have no such value — every bit pattern of an `i32` is an ordinary number, `i32::MAX == i32::MAX` is `true` — so they implement both. And integer division by zero isn't a `NaN` analogue; there's no bit pattern to put there, so Rust panics instead. Among floats, only `0.0 / 0.0` (and friends like `(-1.0).sqrt()`, `inf - inf`) gives `NaN` — `1.0 / 0.0` is a well-defined `inf`.
+
+**So should you derive both?** For `User` above, yes — all its fields are `Eq`, so it's free, costs nothing at runtime, and unlocks using `User` as a `HashSet` element or `HashMap` key. The only reason to derive `PartialEq` alone is a field that genuinely isn't reflexive, i.e. a float. Deriving `Eq` there would be a lie about your type's semantics, and the compiler stops you anyway.
+
+### The contract is unenforced
+
+Here's the part worth internalizing: symmetry, transitivity and reflexivity are promises *you* make, not properties the compiler checks. `#[derive(PartialEq)]` always produces a well-behaved impl. The moment you hand-write `impl PartialEq`, nothing stops you from breaking the rules — you just get code that misbehaves at a distance, in sorting or hashing or dedup logic that assumed the contract held.
+
+**Case 1: `a == b` but `b != a`.** A derived impl can't do this; it's symmetric by construction. A buggy manual one can:
+
+```rust
+struct Fuzzy(i32);
+
+impl PartialEq for Fuzzy {
+    fn eq(&self, other: &Self) -> bool {
+        // bug: the trailing clause makes this directional
+        (self.0 - other.0).abs() <= 2 && self.0 > other.0
+    }
+}
+```
+
+The realistic version of this mistake involves cross-type comparison. `PartialEq` is generic over the right-hand side — `PartialEq<Rhs = Self>` — so `impl PartialEq<B> for A` is legal and gives you `a == b`. But `b == a` is then a *different* impl, resolved separately, and keeping the two consistent is entirely on you:
+
+```rust
+struct Celsius(f64);
+struct Fahrenheit(f64);
+
+impl PartialEq<Fahrenheit> for Celsius {
+    fn eq(&self, other: &Fahrenheit) -> bool {
+        self.0 == (other.0 - 32.0) / 1.8
+    }
+}
+
+impl PartialEq<Celsius> for Fahrenheit {
+    fn eq(&self, other: &Celsius) -> bool {
+        self.0 * 1.8 + 32.0 == other.0   // different arithmetic, different rounding
+    }
+}
+```
+
+Both impls look right. They compute the conversion in opposite directions, so floating-point rounding can make `c == f` and `f == c` disagree for the same pair of values. If you write a cross-type `PartialEq`, write both directions and make them the *same* computation.
+
+**Case 2: symmetric but not transitive.** This is the classic, and it's why "approximate equality" is a trap. Define equality as "within a tolerance":
+
+```rust
+struct Approx(f64);
+
+impl PartialEq for Approx {
+    fn eq(&self, other: &Self) -> bool {
+        (self.0 - other.0).abs() < 1.0
+    }
+}
+
+let a = Approx(1.0);
+let b = Approx(1.9);
+let c = Approx(2.8);
+
+a == b   // true  (diff = 0.9)
+b == c   // true  (diff = 0.9)
+a == c   // false (diff = 1.8)  ← transitivity broken
+```
+
+Symmetry holds perfectly — `(x - y).abs()` doesn't care about argument order. But equality chains drift: `a` is close to `b`, `b` is close to `c`, and `a` is not close to `c`. Feed this type to `sort_by` or use it as a `HashMap` key and you get results that depend on comparison order.
+
+This is exactly why `f64`'s own `PartialEq` uses exact bit comparison rather than a tolerance. Exact equality keeps symmetry and transitivity intact; it gives up only reflexivity, and only for `NaN`. If you need tolerance comparison, write it as a named method — `fn approx_eq(&self, other: &Self) -> bool` — not as `PartialEq`. Callers then know they're getting a fuzzy relation instead of assuming the axioms.
+
+### `PartialOrd` and `Ord`
+
+The same split, one level up. `PartialOrd::partial_cmp` returns `Option<Ordering>` — `None` means "these two aren't comparable." `Ord::cmp` returns a plain `Ordering` and promises a **total order**: every pair compares, and the ordering is transitive and antisymmetric.
+
+Floats are the same culprit for the same reason: `NaN` compares as `None` against everything, so `f64` is `PartialOrd` but not `Ord`. That's the concrete cause of the error you hit the first time you sort floats:
+
+```rust
+let mut v = vec![3.0, 1.0, 2.0];
+v.sort();                                          // error: f64 doesn't implement Ord
+v.sort_by(|a, b| a.partial_cmp(b).unwrap());       // panics if a NaN sneaks in
+v.sort_by(|a, b| a.total_cmp(b));                  // best: total order, NaN gets a defined position
+```
+
+When you derive `PartialOrd`/`Ord` on a struct, comparison is lexicographic in declaration order — first field, then second as a tiebreak, and so on. Reordering fields silently changes sort behaviour, which is a nice trap to know about before it bites you.
+
 ### `Copy` and `Clone` — why `String` isn't `Copy`
 
 `Copy` means "duplicating this value is just a `memcpy` of its bytes, and both copies are independently valid."
@@ -870,6 +1056,38 @@ impl Drop for Foo { fn drop(&mut self) {} }
 So anything owning a resource — `String`, `Vec`, `Box`, `File`, `Rc` (needs a refcount increment) — is `Clone` instead. `Clone` is the explicit, possibly-expensive version: you have to write `.clone()`, which makes the allocation visible in the source.
 
 `Copy` is the "trivially duplicable" subset: integers, `char`, `bool`, `&T`, and aggregates of those.
+
+### `Debug` vs. `Display`
+
+Two formatting traits, and the split is about audience.
+
+`Debug` is `{:?}` — for programmers. It's derivable, it's allowed to be ugly, and it should exist on essentially every public type you write. `{:#?}` is the pretty-printed multi-line version, which is what you want when inspecting nested structures.
+
+`Display` is `{}` — for humans. It is deliberately **not derivable**, because there's no way for a macro to guess what a good user-facing message looks like. You write it by hand:
+
+```rust
+use std::fmt;
+
+impl fmt::Display for User {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} (#{})", self.name, self.id)
+    }
+}
+```
+
+Implementing `Display` also gets you `.to_string()` for free, via a blanket `impl<T: Display> ToString for T` in the standard library. That's the same one-impl-many-uses pattern as `From`/`Into`.
+
+The rule for error types: implement both. `Debug` for the developer reading a stack trace, `Display` for the message the user sees. `std::error::Error` requires both as supertraits precisely for that reason.
+
+### `Hash` — and its contract with `Eq`
+
+`Hash` is derivable and mostly invisible, but it carries one rule that matters:
+
+> If `a == b`, then `hash(a)` must equal `hash(b)`.
+
+Break it and `HashMap` silently loses entries — you insert a key, look it up with an equal key, and get `None`, because the two hashed into different buckets. Deriving `Hash` alongside `PartialEq`/`Eq` keeps them in sync automatically. Hand-writing one but deriving the other is the way this goes wrong: if your manual `PartialEq` ignores a field, your `Hash` must ignore it too.
+
+Note the direction — the reverse isn't required. Two unequal values are allowed to hash the same; that's just a collision, which `HashMap` handles.
 
 ## Interior mutability
 
