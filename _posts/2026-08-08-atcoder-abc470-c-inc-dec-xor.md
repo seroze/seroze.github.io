@@ -85,6 +85,20 @@ A single `2` query *can* touch up to `N` elements. But the claim is that summed 
 
 ### The token argument
 
+This trick has a name: it's the **potential method**. You define a potential function Φ over
+the data structure's state — here, Φ = the total number of tokens outstanding, which is just
+the sum of all `A[i]` — and instead of bounding each operation's real cost, you bound its
+*amortized* cost, real cost plus the change in Φ. A `1 x` query does `O(1)` real work and
+raises Φ by 1, so it's `O(1)` amortized. A `2` query does work proportional to the number of
+elements it touches, but drops Φ by exactly that amount, so its amortized cost is `0` — the
+work was already paid for when Φ went up. Since Φ starts at 0 and never goes negative, the
+total real cost is bounded by the total amortized cost, which is `O(Q)`.
+
+The token framing below is the same argument in more concrete language — tokens *are* the
+potential, and "spending a token" is Φ decreasing by one. It's worth being able to move
+between the two, since the informal version is faster to see and the formal version is what
+actually proves the bound.
+
 Think of every `1 x` query as **minting one token** and handing it to element `x`. A token represents one unit of value the element is currently holding — a debt that has to be paid off one unit at a time before the element can go back to zero.
 
 Now look at what happens inside the `2`-query loop: every time an active element gets touched, it's decremented by exactly 1. **That decrement spends exactly one token.** An element can only be in the active set if it's holding at least one token (that's literally the condition for being active), and once its tokens run out it's removed and stops being touched by future `2` queries.
