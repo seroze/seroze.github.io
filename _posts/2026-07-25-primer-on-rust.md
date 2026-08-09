@@ -1081,13 +1081,53 @@ The rule for error types: implement both. `Debug` for the developer reading a st
 
 ### `Hash` — and its contract with `Eq`
 
-`Hash` is derivable and mostly invisible, but it carries one rule that matters:
+To use a type as a `HashMap` key or a `HashSet` element, you need **`Hash + Eq`** — and since `Eq: PartialEq`, that's three derives in practice:
+
+```rust
+#[derive(Hash, PartialEq, Eq)]
+struct User {
+    id: u64,
+    name: String,
+}
+```
+
+**Why both?** Because hashing alone can't identify a key. A hash narrows the search to one bucket; equality confirms you found the right key *inside* that bucket. Collisions aren't an edge case to engineer around — they're guaranteed by pigeonhole, since a `u64` hash has to represent infinitely many possible `User` values. So lookup is always two steps: hash to find the bucket, then `==` against the candidates in it. Drop `Eq` and the second step has nothing to call.
+
+**The contract between them:**
 
 > If `a == b`, then `hash(a)` must equal `hash(b)`.
 
-Break it and `HashMap` silently loses entries — you insert a key, look it up with an equal key, and get `None`, because the two hashed into different buckets. Deriving `Hash` alongside `PartialEq`/`Eq` keeps them in sync automatically. Hand-writing one but deriving the other is the way this goes wrong: if your manual `PartialEq` ignores a field, your `Hash` must ignore it too.
+Break it and `HashMap` silently loses entries — you insert a key, look it up with an equal key, and get `None`, because the two hashed into different buckets and the equality check never even runs. Deriving `Hash` alongside `PartialEq`/`Eq` keeps them in sync automatically. Hand-writing one but deriving the other is how this goes wrong: if your manual `PartialEq` ignores a field, your `Hash` must ignore it too.
 
-Note the direction — the reverse isn't required. Two unequal values are allowed to hash the same; that's just a collision, which `HashMap` handles.
+Note the direction — the reverse isn't required. Two unequal values may hash the same; that's just a collision, and `==` sorts it out.
+
+**So is `#[derive(Hash, PartialEq)]` enough?** It compiles fine on its own — but the type still won't work as a key. The bound lives on `HashMap`'s methods, not on the derive:
+
+```rust
+impl<K: Eq + Hash, V> HashMap<K, V> { ... }
+```
+
+so you get the error at the `insert`/`get` call site instead: *the trait bound `User: Eq` is not satisfied*. Always the three-derive version.
+
+**Why does `HashMap` insist on `Eq` rather than settling for `PartialEq`?** This is the question that makes the whole `Eq` marker trait earn its keep. `PartialEq` doesn't guarantee reflexivity, and a key that isn't equal to itself breaks the map at a basic level:
+
+```rust
+#[derive(Hash, PartialEq)]     // no Eq — id is f64
+struct Reading { id: f64 }
+```
+
+Insert `Reading { id: f64::NAN }` and you could never get it back. The lookup would hash to the right bucket, find the byte-identical key sitting there, run `==` on it, and get `false` — so `get` returns `None`, `remove` can't remove it, and `insert` of an "equal" key adds a duplicate rather than replacing. The entry is permanently unreachable and permanently occupying space. `Eq` is exactly the promise that this can't happen: **every key is findable by an equal key, including itself.**
+
+`BTreeMap` and `BTreeSet` want `Ord` instead of `Hash + Eq`, for the same underlying reason one level up — they need a total order to navigate the tree, and `PartialOrd` returning `None` would leave a comparison with nowhere to go.
+
+One last thing about that drill snippet, which is a borrow-checker trap rather than a trait one:
+
+```rust
+map.insert(user, "some data");
+let value = map.get(&user);      // error: borrow of moved value
+```
+
+`insert` takes the key **by value**, so `user` is moved into the map and can't be used afterwards. Fix it by looking up a fresh equal key, deriving `Clone` and inserting `user.clone()`, or keying the map on something cheap like `user.id`. The last option is usually the right one — small `Copy` keys with the full struct as the *value* is the more common shape.
 
 ## Interior mutability
 
