@@ -956,6 +956,67 @@ An empty marker trait. It defines no methods and changes nothing about what runs
 
 That third one is the entire difference, and floats are the reason it's carved out. `f64::NAN == f64::NAN` is `false` by IEEE 754 design: `NaN` means "this result is meaningless," and two meaningless results aren't equal. Note precisely which axiom that breaks — symmetry is fine (`NaN == NaN` is consistently `false` in both directions) and transitivity is fine (no chain of equalities leads to a contradiction, since `NaN` is equal to nothing at all). Only reflexivity fails. That single broken guarantee is why `f32`/`f64` implement `PartialEq` but not `Eq`, and it propagates: any struct with a float field can derive `PartialEq` but not `Eq`.
 
+**The one line that demonstrates it.** If you only remember one thing from this section, make it this:
+
+```rust
+let x = f64::NAN;
+
+assert!(x != x);        // passes — the only value in Rust not equal to itself
+assert_eq!(x == x, false);
+```
+
+That's the whole justification for splitting the trait in two. Every other numeric type is reflexive, which is why they're all `Eq`:
+
+```rust
+assert!(i32::MAX == i32::MAX);   // true, always
+assert!(0u8 == 0u8);
+```
+
+**Now watch the derives track that distinction exactly.** This compiles:
+
+```rust
+#[derive(PartialEq)]
+struct Reading {
+    value: f64,
+}
+```
+
+Add `Eq` and it doesn't:
+
+```rust
+#[derive(PartialEq, Eq)]
+struct Reading {
+    value: f64,
+}
+```
+
+```
+error[E0277]: the trait bound `f64: Eq` is not satisfied
+   --> eq_fail.rs:3:5
+    |
+  1 | #[derive(PartialEq, Eq)]
+    |                     -- in this derive macro expansion
+  2 | struct Reading {
+  3 |     value: f64,
+    |     ^^^^^^^^^^ the trait `Eq` is not implemented for `f64`
+    |
+note: required by a bound in `std::cmp::AssertParamIsEq`
+```
+
+That `AssertParamIsEq` in the last line is the derive machinery showing its hand: `#[derive(Eq)]` generates no comparison code at all — it just emits a static assertion that every field is itself `Eq`. Which is the perfect illustration of what `Eq` *is*: not behaviour, just a checked claim.
+
+Swap the field for a `u64` and both derives work:
+
+```rust
+#[derive(PartialEq, Eq)]      // fine — u64 and String are both Eq
+struct User {
+    id: u64,
+    name: String,
+}
+```
+
+So the rule to state in an interview: **derive `Eq` whenever every field is `Eq` — it's free and unlocks `HashMap` keys — and the one thing that will stop you is a float.**
+
 Integers have no such value — every bit pattern of an `i32` is an ordinary number, `i32::MAX == i32::MAX` is `true` — so they implement both. And integer division by zero isn't a `NaN` analogue; there's no bit pattern to put there, so Rust panics instead. Among floats, only `0.0 / 0.0` (and friends like `(-1.0).sqrt()`, `inf - inf`) gives `NaN` — `1.0 / 0.0` is a well-defined `inf`.
 
 **So should you derive both?** For `User` above, yes — all its fields are `Eq`, so it's free, costs nothing at runtime, and unlocks using `User` as a `HashSet` element or `HashMap` key. The only reason to derive `PartialEq` alone is a field that genuinely isn't reflexive, i.e. a float. Deriving `Eq` there would be a lie about your type's semantics, and the compiler stops you anyway.
@@ -1026,14 +1087,52 @@ This is exactly why `f64`'s own `PartialEq` uses exact bit comparison rather tha
 
 The same split, one level up. `PartialOrd::partial_cmp` returns `Option<Ordering>` — `None` means "these two aren't comparable." `Ord::cmp` returns a plain `Ordering` and promises a **total order**: every pair compares, and the ordering is transitive and antisymmetric.
 
-Floats are the same culprit for the same reason: `NaN` compares as `None` against everything, so `f64` is `PartialOrd` but not `Ord`. That's the concrete cause of the error you hit the first time you sort floats:
+Floats are the same culprit for the same reason. Here the `Option` in the return type stops being an abstraction and becomes something you can print:
 
 ```rust
-let mut v = vec![3.0, 1.0, 2.0];
-v.sort();                                          // error: f64 doesn't implement Ord
-v.sort_by(|a, b| a.partial_cmp(b).unwrap());       // panics if a NaN sneaks in
-v.sort_by(|a, b| a.total_cmp(b));                  // best: total order, NaN gets a defined position
+assert_eq!(1.0_f64.partial_cmp(&2.0), Some(Ordering::Less));   // comparable
+assert_eq!(f64::NAN.partial_cmp(&1.0), None);                  // not comparable
 ```
+
+`None` is the whole reason `PartialOrd` exists. And it has a consequence people find genuinely surprising the first time — with `NaN` involved, a comparison and its opposite are **both false**:
+
+```rust
+let x = f64::NAN;
+
+assert_eq!(x < 1.0, false);
+assert_eq!(x > 1.0, false);
+assert_eq!(x == 1.0, false);   // all three at once
+```
+
+In every other type, `!(a < b) && !(a == b)` implies `a > b`. That's trichotomy, and it's precisely what a *total* order guarantees and a partial one doesn't. So `f64` is `PartialOrd` but not `Ord` — which is the concrete cause of the error you hit the first time you sort floats:
+
+```rust
+let mut v = vec![3.0_f64, 1.0, 2.0];
+v.sort();
+```
+
+```
+error[E0277]: the trait bound `f64: Ord` is not satisfied
+   --> sortfail.rs:3:7
+    |
+  3 |     v.sort();
+    |       ^^^^ the trait `Ord` is not implemented for `f64`
+```
+
+`sort` needs `Ord` because a sorting algorithm has to be able to order *any* two elements it's handed — a `None` mid-sort would leave it with nowhere to go. Three ways out, in increasing order of how much I'd recommend them:
+
+```rust
+v.sort_by(|a, b| a.partial_cmp(b).unwrap());   // panics the moment a NaN appears
+v.sort_by(|a, b| a.total_cmp(b));              // total order, NaN sorts to the end
+```
+
+```rust
+let mut v = vec![3.0_f64, f64::NAN, 1.0, 2.0];
+v.sort_by(|a, b| a.total_cmp(b));
+// [1.0, 2.0, 3.0, NaN]
+```
+
+`total_cmp` is the right default. It implements IEEE 754's total ordering, so it never panics and gives `NaN` a defined position instead of pretending it can't occur.
 
 When you derive `PartialOrd`/`Ord` on a struct, comparison is lexicographic in declaration order — first field, then second as a tiebreak, and so on. Reordering fields silently changes sort behaviour, which is a nice trap to know about before it bites you.
 
@@ -1107,7 +1206,23 @@ Note the direction — the reverse isn't required. Two unequal values may hash t
 impl<K: Eq + Hash, V> HashMap<K, V> { ... }
 ```
 
-so you get the error at the `insert`/`get` call site instead: *the trait bound `User: Eq` is not satisfied*. Always the three-derive version.
+so the error lands at the `insert`/`get` call site rather than on the type, and it's an E0599 ("method exists, but its trait bounds were not satisfied") instead of the E0277 you might expect:
+
+```
+error[E0599]: the method `insert` exists for struct `HashMap<K, &str>`,
+              but its trait bounds were not satisfied
+  |
+5 |     struct K(u64, f64);
+  |     -------- doesn't satisfy `K: Eq`
+7 |     m.insert(K(1, f64::NAN), "data");
+  |       ^^^^^^
+  |
+  = note: the following trait bounds were not satisfied:
+          `K: Eq`
+help: consider annotating `K` with `#[derive(Eq, PartialEq)]`
+```
+
+Worth recognising that shape — "method exists but trait bounds were not satisfied" almost always means a missing derive, not a missing method. Always the three-derive version.
 
 **Why does `HashMap` insist on `Eq` rather than settling for `PartialEq`?** This is the question that makes the whole `Eq` marker trait earn its keep. `PartialEq` doesn't guarantee reflexivity, and a key that isn't equal to itself breaks the map at a basic level:
 
@@ -1116,7 +1231,45 @@ so you get the error at the `insert`/`get` call site instead: *the trait bound `
 struct Reading { id: f64 }
 ```
 
-Insert `Reading { id: f64::NAN }` and you could never get it back. The lookup would hash to the right bucket, find the byte-identical key sitting there, run `==` on it, and get `false` — so `get` returns `None`, `remove` can't remove it, and `insert` of an "equal" key adds a duplicate rather than replacing. The entry is permanently unreachable and permanently occupying space. `Eq` is exactly the promise that this can't happen: **every key is findable by an equal key, including itself.**
+The compiler stops you there, so to actually watch it break you have to lie — hand-write the impls and claim `Eq` anyway:
+
+```rust
+#[derive(Debug, Clone, Copy)]
+struct Reading { value: f64 }
+
+impl PartialEq for Reading {
+    fn eq(&self, other: &Self) -> bool { self.value == other.value }  // NaN != NaN
+}
+impl Eq for Reading {}                       // the lie: this type is not reflexive
+impl Hash for Reading {
+    fn hash<H: Hasher>(&self, h: &mut H) { self.value.to_bits().hash(h); }
+}
+```
+
+Note the `Hash` impl is impeccable — it hashes the raw bits, so two `NaN`s hash identically. The contract "`a == b` implies equal hashes" is upheld. Only reflexivity is broken. Now insert one key and try to use it:
+
+```rust
+let key = Reading { value: f64::NAN };
+let mut m = HashMap::new();
+m.insert(key, "sensor-7");
+```
+
+```
+len            : 1
+get(&key)      : None
+contains_key   : false
+remove(&key)   : None
+```
+
+The entry is in the map — `len` says so — and there is no way to reach it. The lookup hashes to the correct bucket, finds the byte-identical key sitting right there, runs `==` on it, gets `false`, and reports the key absent. It can't be read, can't be removed, and inserting the "same" key again doesn't replace it:
+
+```rust
+m.insert(key, "sensor-9");
+// len after 2nd  : 2
+// [(Reading { value: NaN }, "sensor-7"), (Reading { value: NaN }, "sensor-9")]
+```
+
+Two entries with visually identical keys, both unreachable, growing without bound. `Eq` is exactly the promise that this can't happen: **every key is findable by an equal key, including itself.** The bound isn't bureaucracy — it's the map refusing to accept keys it could lose.
 
 `BTreeMap` and `BTreeSet` want `Ord` instead of `Hash + Eq`, for the same underlying reason one level up — they need a total order to navigate the tree, and `PartialOrd` returning `None` would leave a comparison with nowhere to go.
 
