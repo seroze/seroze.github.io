@@ -56,4 +56,48 @@ ecosystem that don't trend.
 
 ---
 
+## [Abhishek](https://abhisheklearn12.github.io/)
+
+Systems and inference engineer based in India, working across the Rust data stack. GitHub:
+[@Abhisheklearn12](https://github.com/Abhisheklearn12). His own summary is three words —
+*systems, performance and inference* — and the commit trail matches it closely.
+
+Where his merged work has landed:
+
+- [**arrow-rs**](https://github.com/apache/arrow-rs) — the Rust implementation of Apache
+  Arrow, and the columnar layer under most of the ecosystem's analytics tooling. Added
+  `BinaryView` support to the `bit_length` kernel, `RunEndEncoded` array support to the JSON
+  reader and writer, and fixed a bug in `arrow-cast` where null dictionary values were
+  dropped when casting to a view type.
+- [**ParadeDB**](https://github.com/paradedb/paradedb) — Postgres search and analytics built
+  on Tantivy. His PRs here are on the query execution path: snapshotting indexes through
+  `ParallelScanState` so parallel `JoinScan` sees consistent `DocAddress`es, visibility
+  filtering in `SegmentedTopK`, and a performance change swapping a `BinaryHeap` for
+  `Vec` + QuickSelect in `SegmentedTopKExec`.
+- [**LanceDB**](https://github.com/lancedb/lancedb) — the vector database. Refactoring work
+  pulling schema-evolution and optimize logic out of a growing `table.rs` into their own
+  submodules.
+- [**Turso**](https://github.com/tursodatabase/turso) (the SQLite rewrite in Rust) and
+  [**rerun**](https://github.com/rerun-io/rerun) — smaller fixes, including making
+  `json_group_array`/`json_group_object` return `[]`/`{}` on empty input.
+
+Alongside that, his own repos are the read-the-paper-then-build-it kind:
+[**lumen-lang**](https://github.com/Abhisheklearn12/lumen-lang), a statically typed language
+taken through the full pipeline — lexer, parser, name resolution, type checking, a typed IR,
+optimization, codegen; [**tsdb**](https://github.com/Abhisheklearn12/tsdb), an in-memory time
+series database implementing Facebook's Gorilla paper (delta-of-delta timestamps, XOR float
+compression, ~12x); plus an LSM tree, a bloom filter, a chess engine, and
+[**inference-cuda-kernels**](https://github.com/Abhisheklearn12/inference-cuda-kernels) on
+the inference side. He also posts on [YouTube](https://www.youtube.com/@Abhishekinference)
+and [X](https://x.com/Abhishekcur).
+
+**Why I flagged it:** he's the counterpoint to the entry above — not a maintainer with a
+governance seat, but someone visibly working their way into serious codebases from the
+outside, and the specific way he does it is worth noticing. Refactors that make a file
+easier to work in, kernels for the type combinations nobody got to yet, a `BinaryHeap` →
+QuickSelect swap in a top-k operator. That's how contributing to a database engine actually
+starts, and it's a more useful template for most people than the fellowship path.
+
+---
+
 *More entries to come.*
