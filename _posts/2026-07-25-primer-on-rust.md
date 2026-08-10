@@ -1344,6 +1344,177 @@ let value = map.get(&user);      // error: borrow of moved value
 
 `insert` takes the key **by value**, so `user` is moved into the map and can't be used afterwards. Fix it by looking up a fresh equal key, deriving `Clone` and inserting `user.clone()`, or keying the map on something cheap like `user.id`. The last option is usually the right one — small `Copy` keys with the full struct as the *value* is the more common shape.
 
+### `From`, `Into`, `TryFrom`, `TryInto` — the conversion protocol
+
+The point of these four traits isn't that they do anything clever. Converting a `u64` into a wrapper struct is one line of code with or without them. The point is **standardisation**.
+
+Without a shared convention, every type invents its own name for the same operation:
+
+```rust
+UserId::from_u64(42)
+UserId::new_from_u64(42)
+UserId::parse_u64(42)
+UserId::convert(42)
+```
+
+Four crates, four spellings, and you look up the docs every time. Rust's answer is: there is one name, and everybody uses it.
+
+**`From` — "this conversion is always valid"**
+
+```rust
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct UserId(u64);
+
+impl From<u64> for UserId {
+    fn from(x: u64) -> Self {
+        UserId(x)
+    }
+}
+```
+
+That single impl gives every Rust programmer two forms they already know how to read:
+
+```rust
+let a = UserId::from(42);
+let b: UserId = 42u64.into();   // same thing, direction driven by the annotation
+assert_eq!(a, b);
+```
+
+Note there is no `Result` anywhere. Implementing `From` is a claim: *every* value of the source type maps to a valid value of the target. If that isn't true, you want `TryFrom`.
+
+**`Into` — the same conversion, read from the caller's side**
+
+You never implement `Into`. The standard library has a blanket impl:
+
+```rust
+impl<T, U> Into<U> for T where U: From<T> { ... }
+```
+
+so `From` gets you `Into` free — and writing `Into` yourself is a hard error, not a style preference:
+
+```
+error[E0119]: conflicting implementations of trait `Into<UserId>` for type `u64`
+  = note: conflicting implementation in crate `core`:
+          - impl<T, U> Into<U> for T where U: From<T>;
+```
+
+What `Into` is *for* is bounds. It reads naturally in argument position, where the source type is the generic one:
+
+```rust
+fn greet(id: impl Into<UserId>) {
+    let id: UserId = id.into();
+    println!("hello, user {}", id.0);
+}
+
+greet(7u64);          // hello, user 7
+greet(UserId(9));     // hello, user 9
+```
+
+The second call works because of another blanket impl — `impl<T> From<T> for T`, the reflexive one — so `UserId: Into<UserId>` holds trivially. That's what makes `impl Into<T>` arguments pleasant: callers who already have the right type aren't punished for it.
+
+**`TryFrom` — "this conversion can fail"**
+
+Now suppose the target has a validity constraint:
+
+```rust
+#[derive(Debug, PartialEq)]
+struct Port(u16);
+
+#[derive(Debug)]
+struct PortOutOfRange(u32);
+
+impl TryFrom<u32> for Port {
+    type Error = PortOutOfRange;
+
+    fn try_from(x: u32) -> Result<Self, Self::Error> {
+        if x == 0 || x > u16::MAX as u32 {
+            Err(PortOutOfRange(x))
+        } else {
+            Ok(Port(x as u16))
+        }
+    }
+}
+```
+
+```rust
+println!("{:?}", Port::try_from(8080u32));    // Ok(Port(8080))
+println!("{:?}", Port::try_from(70000u32));   // Err(PortOutOfRange(70000))
+
+let p: Result<Port, _> = 443u32.try_into();   // Ok(Port(443))
+```
+
+The `Result` is the whole message. A caller reading `Port::try_from(value)?` knows without reading any docs that failure is a real possibility they have to deal with — and one they *can* deal with, because `type Error` is theirs to define, not a stringly-typed afterthought.
+
+`TryInto` is to `TryFrom` what `Into` is to `From`: same blanket-impl relationship, same caller-side ergonomics, used the same way in bounds.
+
+The standard library eats its own cooking here. Widening integer conversions are `From` (`i64::from(7u32)` — always fine); narrowing ones are `TryFrom`:
+
+```rust
+u8::try_from(200i64)   // Ok(200)
+u8::try_from(300i64)   // Err(TryFromIntError(PosOverflow))
+```
+
+That pairing is the cleanest illustration of the whole distinction: same conceptual operation, different trait, because one can lose information and the other can't.
+
+**Where this actually pays off**
+
+Three places, roughly in increasing order of how much you'll care.
+
+*Generic code doesn't need to name the source type.* `fn greet(id: impl Into<UserId>)` accepts `u64`, `UserId`, and anything anyone adds a `From` impl for later — including in a downstream crate you've never heard of. The function doesn't change.
+
+*Libraries compose without adapters.* If crate A defines `UserId` with `From<u64>`, and crate C's API takes `impl Into<UserId>`, then crate B handing out plain `u64`s works with C without either of them knowing the other exists. Nobody writes a glue function per type pair, which is the combinatorial version of the problem the naming convention solves individually.
+
+*`?` is built on `From`.* This is the one you hit first in practice, usually without realising it's the same machinery:
+
+```rust
+#[derive(Debug)]
+enum ConfigError {
+    NotANumber(ParseIntError),
+    OutOfRange(TryFromIntError),
+}
+
+impl From<ParseIntError> for ConfigError {
+    fn from(e: ParseIntError) -> Self { ConfigError::NotANumber(e) }
+}
+impl From<TryFromIntError> for ConfigError {
+    fn from(e: TryFromIntError) -> Self { ConfigError::OutOfRange(e) }
+}
+
+fn parse_port(s: &str) -> Result<u16, ConfigError> {
+    let n: u32 = s.parse()?;      // ParseIntError  -> ConfigError
+    let p = u16::try_from(n)?;    // TryFromIntError -> ConfigError
+    Ok(p)
+}
+```
+
+```
+parse_port("8080")   -> Ok(8080)
+parse_port("http")   -> Err(NotANumber(ParseIntError { kind: InvalidDigit }))
+parse_port("70000")  -> Err(OutOfRange(TryFromIntError(PosOverflow)))
+```
+
+Two `From` impls, and `?` silently bridges two foreign error types into one local enum. See [Converting error types](#converting-error-types) for more on that.
+
+**Summary**
+
+| | Infallible | Fallible |
+|---|---|---|
+| Implement this | `From<T>` | `TryFrom<T>` (+ `type Error`) |
+| Get this free | `Into<T>` | `TryInto<T>` |
+| Call site | `U::from(x)` / `x.into()` | `U::try_from(x)?` / `x.try_into()?` |
+| Bound to write | `impl Into<U>` | `impl TryInto<U>` |
+
+**Rules of thumb**
+
+- **Implement `From`/`TryFrom`, bound on `Into`/`TryInto`.** The impl side is where the concrete types live; the bound side is where you want to stay generic.
+- **`From` is a promise of totality.** If some inputs are invalid, `TryFrom` — don't panic inside a `From` impl.
+- Every `From` impl gives you `TryFrom` too, with `Error = Infallible`. So a `try_from` call compiling doesn't mean the conversion can actually fail.
+- The orphan rule still applies: `impl From<Celsius> for f64` is fine (your type is in the impl), `impl From<u64> for String` is not (both foreign). Newtype when you're stuck.
+- Bare `.into()` with nothing to infer from is an error, not a guess — E0283, "type annotations needed". Annotate the binding or use `From` explicitly.
+- For `&str` specifically, prefer `FromStr` over `TryFrom<&str>` — it's what `.parse()` dispatches to.
+
+The one-sentence version: **`From`/`Into` are the standard protocol for infallible conversions and `TryFrom`/`TryInto` for fallible ones, so that generic code and unrelated libraries can compose without anyone inventing bespoke conversion methods.**
+
 ## Interior mutability
 
 `Cell<T>`, `RefCell<T>` and `OnceCell<T>` all let you mutate through a `&T` instead of a `&mut T`. All three wrap `UnsafeCell` underneath, all three are `!Sync`. The difference is how they keep aliasing safe.
