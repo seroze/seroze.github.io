@@ -1156,6 +1156,68 @@ So anything owning a resource — `String`, `Vec`, `Box`, `File`, `Rc` (needs a 
 
 `Copy` is the "trivially duplicable" subset: integers, `char`, `bool`, `&T`, and aggregates of those.
 
+**Rule of thumb:**
+
+| | `Copy` | `Clone` |
+|---|---|---|
+| **Trigger** | implicit — assignment, function arguments | explicit `.clone()` |
+| **Cost** | always cheap (bitwise copy) | can be expensive (deep copy, allocation) |
+| **Original still valid after?** | yes | only if you called `.clone()` — a plain move still invalidates the original |
+| **Requires** | all fields `Copy`, no `Drop` impl | fields need `Clone`, or a custom impl |
+| **Relationship** | `Copy: Clone` — every `Copy` type must also implement `Clone` | `Clone` stands alone |
+
+The first row is the one to say out loud: **`Clone` you have to ask for, `Copy` just happens.** Cloning is always a visible `.clone()` in the source — the compiler will never insert one for you, which is deliberate, since a hidden deep copy is exactly the kind of cost you want spelled out. `Copy`, by contrast, fires silently on ordinary assignment and function calls; there's no syntax for it at all, because there's nothing to be careful about.
+
+```rust
+let a = 5;
+let b = a;              // Copy — implicit, nothing written
+let s = String::from("hi");
+let t = s.clone();      // Clone — explicit, you asked for the allocation
+```
+
+That's the trade the two traits encode: cheap things get to be invisible, expensive things have to be typed out.
+
+That last row has a practical consequence: `Copy` is a **supertrait** of `Clone`, so you can never derive one without the other.
+
+```rust
+#[derive(Copy)]
+struct P { x: i32 }
+```
+
+```
+error[E0277]: the trait bound `P: Clone` is not satisfied
+    |
+  1 | #[derive(Copy)]
+    |          ---- in this derive macro expansion
+  2 | struct P { x: i32 }
+    |        ^ the trait `Clone` is not implemented for `P`
+    |
+note: required by a bound in `Copy`
+```
+
+Which is why you always see the pair written together:
+
+```rust
+#[derive(Clone, Copy)]
+struct P { x: i32 }
+```
+
+For a `Copy` type the two do exactly the same thing — `.clone()` on a `Copy` type is just the bitwise copy, so the derived `Clone` is `*self`. Clippy will tell you as much if you write `.clone()` on one (`clippy::clone_on_copy`).
+
+The row worth reading twice is the third. `Copy` doesn't mean "this value can't be moved" — it means moves *are* copies, so the original stays usable:
+
+```rust
+let a = 5;
+let b = a;
+println!("{a}");        // fine — i32 is Copy
+
+let s = String::from("hi");
+let t = s;
+println!("{s}");        // error[E0382]: borrow of moved value: `s`
+```
+
+Same syntax, entirely different semantics, decided solely by whether the type is `Copy`. That's the single most common source of early borrow-checker confusion — the move is invisible in the source, and only the type tells you it happened.
+
 ### `Debug` vs. `Display`
 
 Two formatting traits, and the split is about audience.
