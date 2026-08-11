@@ -1782,6 +1782,58 @@ The rule of thumb: reach for `Deref` only on true single-field wrapper types whe
 | Typical use | smart pointers and newtypes | generic parameters |
 | Cost | free | free |
 
+### Can a struct have multiple `Deref` impls?
+
+No — you can only implement `Deref` once per struct.
+
+```rust
+impl Deref for MyString {
+    type Target = str;
+    fn deref(&self) -> &str { &self.inner }
+}
+
+impl Deref for MyString {  // ❌ compile error
+    type Target = [u8];
+    fn deref(&self) -> &[u8] { self.inner.as_bytes() }
+}
+```
+
+This fails with `conflicting implementations of trait Deref for type MyString`.
+
+Why: `Deref` declares `Target` as an *associated type*, not a generic parameter.
+
+```rust
+pub trait Deref {
+    type Target: ?Sized;
+    fn deref(&self) -> &Self::Target;
+}
+```
+
+Rust's trait coherence rules say a type can only have one impl of a given trait — and since `Target` isn't part of the trait's identity (it's just an associated item), the two `impl Deref for MyString` blocks collide regardless of what `Target` is set to. The compiler needs `*s` and method-lookup auto-deref to resolve to exactly one type, so allowing multiple targets would make deref coercion ambiguous by construction.
+
+This is precisely where `AsRef<T>` differs and wins: `T` there is a generic type parameter *on the trait itself*, so `AsRef<str>` and `AsRef<[u8]>` are different trait implementations, not conflicting ones:
+
+```rust
+impl AsRef<str> for MyString {
+    fn as_ref(&self) -> &str { &self.inner }
+}
+
+impl AsRef<[u8]> for MyString {
+    fn as_ref(&self) -> &[u8] { self.inner.as_bytes() }
+}
+```
+
+Both compile fine — you just need enough type information at the call site to pick which one applies, either from context or from an annotation:
+
+```rust
+let s = MyString { inner: String::from("hi") };
+
+let text: &str   = s.as_ref();          // inferred from the annotation
+let bytes        = AsRef::<[u8]>::as_ref(&s);  // spelled out explicitly
+```
+
+If you actually need multiple "deref-like views", the idiomatic pattern is to pick your one `Deref::Target` to be the most fundamental representation (usually `str` if you're wrapping a `String`-like type) and implement `AsRef` for any additional views. That mirrors what std itself does: `String` implements `Deref<Target = str>` — one canonical target — but `AsRef<str>`, `AsRef<[u8]>`, and `AsRef<OsStr>` all simultaneously.
+
 ## Error propagation and `?`
 
 Rust has no exceptions. A function that can fail returns `Result<T, E>` — either `Ok(value)` or `Err(error)` — and the caller has to deal with both arms. Done by hand, that gets verbose fast:
