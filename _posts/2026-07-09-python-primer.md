@@ -3,7 +3,7 @@ layout: post
 title: "A primer on Python"
 date: 2026-07-09 00:00:00 +0530
 categories: python
-tags: [python, typing, protocols]
+tags: [python, typing, protocols, competitive_programming]
 author: "Seroze"
 published: true
 ---
@@ -111,3 +111,19 @@ If `BashTool`, `FileReadTool`, `FileEditTool` really are conceptually kinds of `
 **Rule of thumb:** reach for `Protocol` at the edges of your system (plugin points, provider adapters, anything where "shape, not lineage" is the right mental model), and reach for ABC in the interior where you're deliberately building a family of related, shared-behavior classes and want the interpreter itself to catch incomplete implementations.
 
 One last note: add `@runtime_checkable` to a protocol if you also want `isinstance()` checks against it — but it verifies method *presence* only, not signatures.
+
+## Reading stdin fast (a competitive programming trick)
+
+Mostly this matters in competitive programming, where input is huge and the time limit is tight — outside of CP you'll rarely notice. Three ways to read standard input, cheapest last:
+
+```python
+line = input()                              # per-call overhead
+line = sys.stdin.readline()                 # ~2x faster, keeps the '\n'
+data = sys.stdin.buffer.read().split()      # ~4x faster, one syscall
+```
+
+`input()` pays for a prompt check, a readline/tty check, newline stripping and text decoding **on every call**. `sys.stdin.readline` skips the first two (you strip yourself). `buffer.read().split()` skips all of it — one read, one C-level split — so per-line Python overhead disappears entirely.
+
+The cost scales with **line count, not bytes**: on a 1000×1000 grid all three take ~2ms, but on 200k lines of two ints it's 0.31s vs 0.15s vs 0.08s. So use `input()` for a few thousand lines, `sys.stdin.buffer.read().split()` at 10⁵+ tokens, and `input = sys.stdin.readline` as the habit that's never wrong.
+
+One trap: `.buffer` gives you `bytes`, and indexing bytes yields an **int**, so `row[j] == '#'` is silently always `False` — `.decode()` the rows, or compare against `b'#'[0]`.
