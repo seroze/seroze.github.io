@@ -1515,6 +1515,97 @@ Two `From` impls, and `?` silently bridges two foreign error types into one loca
 
 The one-sentence version: **`From`/`Into` are the standard protocol for infallible conversions and `TryFrom`/`TryInto` for fallible ones, so that generic code and unrelated libraries can compose without anyone inventing bespoke conversion methods.**
 
+### `Iterator` vs. `IntoIterator`
+
+These two get conflated constantly, but they answer different questions. `Iterator` is the thing that *produces* values — it has a cursor and you can ask it for the next one:
+
+```rust
+pub trait Iterator {
+    type Item;
+    fn next(&mut self) -> Option<Self::Item>;
+}
+```
+
+`IntoIterator` is the thing that can *become* an iterator. It's what makes a type loopable:
+
+```rust
+pub trait IntoIterator {
+    type Item;
+    type IntoIter: Iterator<Item = Self::Item>;
+    fn into_iter(self) -> Self::IntoIter;
+}
+```
+
+`for x in thing` is pure sugar for `IntoIterator::into_iter(thing)` followed by repeated `next()` calls. Every `Iterator` is also an `IntoIterator` (it returns itself), which is why you can write `for x in v.iter()` as well as `for x in v`.
+
+The part that actually trips people up is that `Vec<T>`, `&Vec<T>` and `&mut Vec<T>` each implement `IntoIterator` *differently*, so what `x` is depends on what you handed the loop.
+
+**1. `for x in numbers` — consumes**
+
+```rust
+for x in numbers {
+    // x: i32
+}
+```
+
+The iterator takes ownership of the collection:
+
+```
+Vec<i32>
+   ↓ IntoIterator
+Item = i32
+```
+
+Afterward `numbers` is no longer usable — it was moved into the loop.
+
+**2. `for x in numbers.iter()` — borrows**
+
+```rust
+for x in numbers.iter() {
+    // x: &i32
+}
+```
+
+```
+numbers
+   ↓
+&Vec<i32>
+   ↓
+Iterator<Item = &i32>
+```
+
+The collection stays usable after the loop. You can read each element but not mutate it through that reference.
+
+**3. `for x in numbers.iter_mut()` — borrows mutably**
+
+```rust
+for x in numbers.iter_mut() {
+    *x += 10;
+}
+```
+
+```
+numbers
+   ↓
+&mut Vec<i32>
+   ↓
+Iterator<Item = &mut i32>
+```
+
+Nothing is consumed, but you get mutable references to the elements, so you can write through them.
+
+The clean mental model:
+
+```
+numbers              ownership
+    │
+    ├── iter()       → &T
+    │
+    └── iter_mut()   → &mut T
+```
+
+`&numbers` and `&mut numbers` in a `for` loop are equivalent to `numbers.iter()` and `numbers.iter_mut()` respectively — the reference impls of `IntoIterator` just forward to them. And on the signature side, taking `impl IntoIterator<Item = T>` instead of `Vec<T>` lets callers pass a vec, an array, a range, or any adapter chain, which is why it shows up in the "take the trait, not the type" rule above.
+
 ## Interior mutability
 
 `Cell<T>`, `RefCell<T>` and `OnceCell<T>` all let you mutate through a `&T` instead of a `&mut T`. All three wrap `UnsafeCell` underneath, all three are `!Sync`. The difference is how they keep aliasing safe.
