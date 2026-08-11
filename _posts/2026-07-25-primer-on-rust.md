@@ -1606,6 +1606,158 @@ numbers              ownership
 
 `&numbers` and `&mut numbers` in a `for` loop are equivalent to `numbers.iter()` and `numbers.iter_mut()` respectively — the reference impls of `IntoIterator` just forward to them. And on the signature side, taking `impl IntoIterator<Item = T>` instead of `Vec<T>` lets callers pass a vec, an array, a range, or any adapter chain, which is why it shows up in the "take the trait, not the type" rule above.
 
+### `Fn`, `FnMut`, `FnOnce`
+
+Closures aren't a single type. Every closure you write gets its own anonymous struct holding whatever it captured, and the three `Fn*` traits describe *how calling it touches that captured state*. The difference is entirely in how each takes `self`:
+
+| Trait | Call signature | Meaning |
+|---|---|---|
+| `Fn` | `fn call(&self, ...)` | callable through a shared reference; call it as many times as you like, concurrently |
+| `FnMut` | `fn call_mut(&mut self, ...)` | needs exclusive access; callable repeatedly, one at a time |
+| `FnOnce` | `fn call_once(self, ...)` | consumes the closure; callable exactly once |
+
+They nest: every `Fn` is also a `FnMut`, and every `FnMut` is also a `FnOnce`. So `FnOnce` is the *loosest* bound (accepts the most closures) and `Fn` is the strictest.
+
+**How the compiler decides**
+
+You never annotate which trait a closure implements — Rust infers it from the closure body:
+
+| Closure body does... | Implements |
+|---|---|
+| Nothing with the environment, or only reads via `&` | `Fn` (+ `FnMut`, `FnOnce`) |
+| Mutates a captured variable | `FnMut` (+ `FnOnce`) |
+| Moves a captured variable out | `FnOnce` only |
+
+```rust
+let name = String::from("world");
+
+let greet = || println!("hello, {name}");   // reads only        → Fn
+greet();
+greet();                                     // fine, repeatable
+
+let mut count = 0;
+let mut bump = || count += 1;                // mutates capture   → FnMut
+bump();
+bump();
+
+let consume = || drop(name);                 // moves `name` out  → FnOnce
+consume();
+// consume();                                // ❌ use of moved value
+```
+
+**`move` is a separate axis.** The `move` keyword forces the closure to *capture by value* rather than by reference — it doesn't decide which trait you get. A `move` closure that only reads its captures is still `Fn`:
+
+```rust
+let data = vec![1, 2, 3];
+let show = move || println!("{}", data.len());  // owns `data`, still Fn
+show();
+show();
+```
+
+You reach for `move` when the closure has to outlive the scope that created it — spawning a thread, returning a closure, storing one in a struct.
+
+**Which bound to write.** Take the loosest trait your function actually needs, since that accepts the most callers:
+
+- Calling it once (`Option::map`, `thread::spawn`) → `FnOnce`
+- Calling it repeatedly with state (`Iterator::for_each`, retry loops) → `FnMut`
+- Calling it repeatedly, possibly from several threads (`Iterator::map`, callbacks) → `Fn`
+
+```rust
+fn call_twice<F: Fn()>(f: F)      { f(); f(); }
+fn tally<F: FnMut()>(mut f: F)    { f(); f(); }   // note: `mut f`
+fn run<F: FnOnce()>(f: F)         { f(); }
+```
+
+Two practical notes. A `FnMut` parameter has to be bound as `mut f` — you can't call `call_mut` through an immutable binding. And function pointers (`fn(i32) -> i32`) implement all three, so a plain `fn` item can be passed anywhere a closure bound is expected.
+
+**Where each one shows up in practice**
+
+*Iterator adapters* — the most common place you'll meet them:
+
+```rust
+// closures that only read: these are Fn
+let doubled: Vec<i32> = v.iter().map(|x| x * 2).collect();
+let evens: Vec<&i32>  = v.iter().filter(|x| **x % 2 == 0).collect();
+
+// closures that carry state: these are FnMut
+let mut total = 0;
+v.iter().for_each(|x| total += x);
+
+let mut seen = HashSet::new();
+let deduped: Vec<&i32> = v.iter().filter(|x| seen.insert(**x)).collect();
+```
+
+Note the bound on all of these — `map`, `filter`, `for_each`, `find`, `any`, `all` are declared as `FnMut`, even though most closures you pass them only read. That's deliberate: `FnMut` is the looser bound, so `Fn` closures satisfy it automatically and stateful ones work too.
+
+*Sorting and comparators* — same story. `sort_by` and `sort_by_key` are also declared `FnMut`, though the comparators you actually write are almost always pure `Fn`:
+
+```rust
+v.sort_by(|a, b| a.cmp(b));
+v.sort_by_key(|x| x.priority);
+```
+
+*`Option` / `Result` combinators* — these take `FnOnce`, because the closure runs at most once:
+
+```rust
+let y = x.unwrap_or_else(|| expensive_default());   // FnOnce, and only if x is None
+let mapped = r.map_err(|e| format!("wrapped: {e}")); // FnOnce
+```
+
+`map`, `and_then`, `or_else`, `unwrap_or_else`, `ok_or_else` — all `FnOnce`.
+
+*Spawning threads and tasks* — also `FnOnce`, since the closure is invoked exactly once when the task runs:
+
+```rust
+std::thread::spawn(move || {
+    do_work(data);
+});
+```
+
+`thread::spawn` and `tokio::spawn` both want `FnOnce() -> T + Send + 'static`.
+
+*Callbacks and event handlers* — stored in a struct, so they need a `Box<dyn ...>`. Which trait depends on whether the hook can fire more than once:
+
+```rust
+struct Button {
+    on_click: Box<dyn FnMut()>,          // fires repeatedly, may track a click count
+}
+
+struct OneShotTimer {
+    on_fire: Option<Box<dyn FnOnce()>>,  // fires once, then consumed
+}
+```
+
+The `Option` on the one-shot is load-bearing: calling a `Box<dyn FnOnce()>` moves it, so you need `.take()` to get it out of the struct.
+
+*Retry loops and polling* — `FnMut`, since the closure is called repeatedly and usually tracks something across attempts:
+
+```rust
+fn with_retry<F, T, E>(mut attempt: F, tries: u32) -> Result<T, E>
+where
+    F: FnMut() -> Result<T, E>,
+{
+    for _ in 0..tries.saturating_sub(1) {
+        if let Ok(v) = attempt() { return Ok(v); }
+    }
+    attempt()
+}
+```
+
+*Your own generic APIs* — the case that matters once you're writing library-ish code:
+
+```rust
+fn process<F>(items: &[Item], mut handler: F)
+where
+    F: FnMut(&Item) -> bool,
+{
+    for item in items {
+        if handler(item) { break; }
+    }
+}
+```
+
+A workable heuristic when you're unsure: start at `Fn`, loosen to `FnMut` when the compiler complains that a capture needs mutating, and loosen to `FnOnce` only when the closure genuinely consumes something. Each step outward accepts strictly more callers, so you want to land on the loosest bound your call pattern actually permits.
+
 ## Interior mutability
 
 `Cell<T>`, `RefCell<T>` and `OnceCell<T>` all let you mutate through a `&T` instead of a `&mut T`. All three wrap `UnsafeCell` underneath, all three are `!Sync`. The difference is how they keep aliasing safe.
