@@ -1752,6 +1752,36 @@ Rust keeps dereferencing until it finds a type that has the method. That chain i
 
 One limit to keep in mind: coercion only goes in the direction `Deref` defines. `&String → &str` is free; going the other way costs an allocation and you have to ask for it explicitly with `.to_string()` or `.to_owned()`.
 
+## `Deref` vs. `AsRef`
+
+Rust gives you two ways to make a type act like another type — but they're not interchangeable.
+
+`Deref` is for smart pointers. Implement it, and the compiler *implicitly* coerces your type wherever a reference to its target is expected — that's how `Box<T>`, `Rc<T>`, and `String` transparently expose `T`'s (or `str`'s) methods without any unwrapping.
+
+`AsRef<T>` is the explicit, no-magic cousin. It says "call `.as_ref()` and get a cheap `&T` view" — no compiler coercion, just a plain conversion. It shines in generic function signatures:
+
+```rust
+use std::path::Path;
+
+fn open<P: AsRef<Path>>(path: P) {
+    let path: &Path = path.as_ref();
+    // &str, String, and PathBuf all land here
+}
+
+open("config.toml");
+open(String::from("config.toml"));
+open(std::path::PathBuf::from("config.toml"));
+```
+
+The rule of thumb: reach for `Deref` only on true single-field wrapper types where implicit coercion is expected. Reach for `AsRef` whenever you want a flexible, allocation-free API surface. One is compiler magic; the other is explicit convention — know which one you're signing up for.
+
+| | `Deref` | `AsRef<T>` |
+|---|---|---|
+| Who invokes it | the compiler, implicitly | you, via `.as_ref()` |
+| Targets per type | exactly one | many (`String: AsRef<str>`, `AsRef<[u8]>`, `AsRef<Path>`, …) |
+| Typical use | smart pointers and newtypes | generic parameters |
+| Cost | free | free |
+
 ## Error propagation and `?`
 
 Rust has no exceptions. A function that can fail returns `Result<T, E>` — either `Ok(value)` or `Err(error)` — and the caller has to deal with both arms. Done by hand, that gets verbose fast:
