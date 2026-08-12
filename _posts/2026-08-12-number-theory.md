@@ -8,11 +8,18 @@ author: "Seroze"
 published: true
 ---
 
-*A running collection of number theory facts that turn a search problem into a one-liner. First up: every even-length palindrome is divisible by 11 — which means 11 is the only palindromic prime with an even number of digits.*
+*A running collection of number theory facts that turn a search problem into a one-liner — one section per trick, added to over time.*
 
 ---
 
-## Every even-length palindrome is divisible by 11
+## Contents {#contents}
+
+1. [Even-length palindromes are divisible by 11](#palindromes-11) — so 11 is the only palindromic prime with an even number of digits. *(CodeChef MD_RIEV)*
+1. [Every divisibility rule is one congruence](#divisibility-rules) — find what $$10^k$$ is congruent to mod your target and the rule falls out.
+
+---
+
+## Even-length palindromes are divisible by 11 {#palindromes-11}
 
 Take any palindrome with an even number of digits:
 
@@ -110,9 +117,7 @@ $$
 
 One even-length entry, then never again — no matter how far you go.
 
----
-
-## Where this shows up: CodeChef MD_RIEV
+### Application — CodeChef MD_RIEV
 
 [Palindromic Prime Numbers](https://www.codechef.com/problems/MD_RIEV) (CodeChef Starters 108) asks:
 
@@ -149,9 +154,7 @@ $$O(1)$$ per test case. No sieve, no palindrome check, no precomputation.
 
 The lesson generalises past this problem: when a counting problem is about primes *and* some digit structure, check whether the digit structure forces a divisor. If it does, the "primes" half of the problem usually collapses to a handful of small cases.
 
----
-
-## The generalisation to other bases
+### In other bases
 
 Nothing about the argument was specific to base 10. In base $$b$$:
 
@@ -174,9 +177,20 @@ Which means in base $$b$$, the only even-length palindromic prime is $$b + 1$$ i
 
 Binary is a nice sanity check: $$11_2 = 3$$, $$1001_2 = 9$$, $$1111_2 = 15$$, $$100001_2 = 33$$ — all multiples of 3.
 
+### Quick reference
+
+| Fact | Statement |
+|---|---|
+| Rule for 11 | $$n \equiv \sum (-1)^i d_i \pmod{11}$$ |
+| Even-length palindromes | always divisible by 11 |
+| Even-length palindromic primes | only 11 |
+| Odd-length palindromes | no forced divisor |
+| Base $$b$$ version | even-length palindromes divisible by $$b+1$$ |
+| MD_RIEV answer | $$N \le 4 \to (0, N)$$; else $$(1, N-1)$$ |
+
 ---
 
-## The same trick powers every divisibility rule
+## Every divisibility rule is one congruence {#divisibility-rules}
 
 Every schoolbook divisibility rule is the same move: find what $$10$$ (or a power of it) is congruent to, mod your target.
 
@@ -196,16 +210,3 @@ $$
 $$
 
 and $$334$$ is not divisible by 7, 11, or 13 — so neither is $$1234567$$. One computation resolves three moduli at once.
-
----
-
-## Quick reference
-
-| Fact | Statement |
-|---|---|
-| Rule for 11 | $$n \equiv \sum (-1)^i d_i \pmod{11}$$ |
-| Even-length palindromes | always divisible by 11 |
-| Even-length palindromic primes | only 11 |
-| Odd-length palindromes | no forced divisor |
-| Base $$b$$ version | even-length palindromes divisible by $$b+1$$ |
-| MD_RIEV answer | $$N \le 4 \to (0, N)$$; else $$(1, N-1)$$ |
