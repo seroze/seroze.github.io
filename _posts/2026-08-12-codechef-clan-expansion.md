@@ -1,32 +1,26 @@
 ---
 layout: post
-title: "[Competitive Programming] Spreading and Coverage"
+title: "[CodeChef] Starters 108 — Clan Expansion: the largest gap between sources"
 date: 2026-08-12 00:00:00 +0530
 categories: competitive-programming
-tags: [competitive_programming, greedy, arrays]
+tags: [competitive_programming, codechef, greedy, arrays]
 author: "Seroze"
 published: true
+redirect_from:
+  - /spreading-and-coverage/
 ---
 
-*A running collection of patterns for problems where something spreads out from many starting points at once — one section per trick, added to over time.*
+Problem: [CodeChef — Clan Expansion](https://www.codechef.com/problems/CLANEXPNSN)
 
----
-
-## Contents {#contents}
-
-1. [Largest gap between sources](#largest-gap) — the last-reached point is always a boundary or a gap midpoint, so scan the sources, not every index. *(CodeChef CLANEXPNSN)*
-
----
-
-## Largest gap between sources {#largest-gap}
-
-**Problem:** [Clan Expansion](https://www.codechef.com/problems/CLANEXPNSN) — territories on a line, each held by some clan. A clan expands from every territory it already holds, one step per second, simultaneously. For each clan, how long until it covers the whole line?
+> Territories on a line, each held by some clan. A clan expands from every territory it
+> already holds, one step per second, simultaneously. For each clan, how long until it
+> covers the whole line?
 
 My first instinct was to simulate the expansion for every clan. For a fixed clan I could compute the distance of every territory to its nearest occurrence and take the maximum. That's correct, but it's $$O(N)$$ work per clan and $$O(N^2)$$ overall.
 
 The trick is to completely change the viewpoint.
 
-### The reframe
+## The reframe
 
 Imagine every occurrence of a clan as a **source** from which expansion starts simultaneously.
 
@@ -45,7 +39,7 @@ ask,
 
 The answer is always determined by the **largest uncovered gap**. And a gap is bounded by sources — so you only ever need to look at consecutive source positions, never at the territories in between.
 
-### The three kinds of gap
+## The three kinds of gap
 
 There are only three:
 
@@ -65,7 +59,7 @@ The answer for the clan is the maximum of these.
 
 One detail worth pinning down, because "gap length" is ambiguous: $$d = p_{j+1} - p_j$$ is the **difference between the two source positions**, not the count of territories strictly between them (that would be $$d - 1$$). With that definition the interior contribution is exactly $$\lfloor d/2 \rfloor$$ — for sources at 0 and 4, position 2 is reached at time $$4/2 = 2$$; for sources at 0 and 5, both positions 2 and 3 are reached at time $$\lfloor 5/2 \rfloor = 2$$.
 
-### The code
+## The code
 
 ```python
 from collections import defaultdict
@@ -88,7 +82,7 @@ def solve(n, a):
 
 I checked the gap formula against the brute-force "max distance to nearest source" definition on 30,000 random arrays — they agree everywhere.
 
-### The bigger lesson
+## The bigger lesson
 
 Whenever influence spreads uniformly from multiple starting points on a line, don't think about simulating the spread. Identify the **sources** and look for the **largest gap between them**.
 
@@ -99,7 +93,7 @@ The farthest point is almost always one of two things:
 
 That turns a simulation problem into gap analysis — a single linear scan over the source positions.
 
-### Mental checklist
+## Mental checklist
 
 When I see expansion on a line, I'll ask:
 
@@ -109,7 +103,7 @@ When I see expansion on a line, I'll ask:
 
 This pattern shows up all over the place: propagation, coverage, nearest-distance queries, Wi-Fi routers, heaters, influence spreading. Once you recognise it, many seemingly difficult simulations collapse into one pass over the sources.
 
-### Quick reference
+## Quick reference
 
 | Quantity | Value |
 |---|---|
