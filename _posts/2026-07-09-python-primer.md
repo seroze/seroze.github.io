@@ -10,6 +10,8 @@ published: true
 
 *A running collection of Python concepts worth knowing cold.*
 
+Exception handling has its own companion post: [Python Exception Handling: The Parts I Got Wrong](/python-exception-handling/) — the hierarchy, handler ordering, the `finally` unwind, chaining, and custom exception design.
+
 ## Contents
 {:.no_toc}
 
@@ -313,6 +315,273 @@ c ──► [ • , • ] ──► [1]  [2]   ← fresh copies all the way down
 `copy.deepcopy` walks the whole object graph and rebuilds it, keeping a memo dict so shared references stay shared and cycles don't loop forever. It's correct but slow, and it will happily try to copy things you didn't intend — file handles, sockets, database connections. Classes can control it via `__copy__` / `__deepcopy__` / `__reduce__`.
 
 For flat data, shallow is fine and cheap. For nested data you intend to mutate, either deep-copy it or — usually better — reach for immutable structures (tuples, frozen dataclasses) so the question never comes up.
+
+## Common mistakes
+
+Almost every Python question that *feels* like trivia is really one of about five mental-model boundaries being probed. The sections above cover four of them in depth — [`is` vs `==`](#is-vs--small-int-caching-and-string-interning), [defaults evaluated once](#default-arguments-are-evaluated-once), [late binding](#closures-capture-variables-not-values), [shallow vs deep copy](#shallow-vs-deep-copy). What follows is the rest, organised around the mistakes rather than the features.
+
+### Mutation vs rebinding
+
+This one distinction resolves most copy, aliasing and argument-passing questions on its own:
+
+```python
+a[0].append(99)     # mutation  — changes the object a[0] refers to
+a[0] = [99]         # rebinding — changes which object a[0] refers to
+```
+
+The first is visible through *every* name that reaches that object. The second is visible only through `a`, because nothing about the old object changed — you just pointed one slot somewhere else.
+
+> **Mutation changes an object. Rebinding changes a reference.**
+
+### `b = a` is not a copy
+
+```python
+a = [1, 2]
+b = a
+
+a is b        # True — one object, two names
+```
+
+No copy of any kind happens. Compare the three levels:
+
+```python
+b = a                    # alias      — same object
+b = a.copy()             # shallow    — new outer object, children shared
+b = copy.deepcopy(a)     # deep       — recursively rebuilt
+```
+
+The middle one is worth restating precisely, because it's usually described backwards: a shallow copy creates a **new outer object** and **shares the children**. `b = a[:]` and `list(a)` are the same thing.
+
+A list comprehension buys you exactly one more level:
+
+```python
+b = [row[:] for row in a]     # new outer list, new row lists
+```
+
+For a 2-D list of numbers that's indistinguishable from a deep copy. For anything deeper — rows containing dicts containing lists — it isn't, and calling it a deepcopy is how the bug gets in. It copies the levels you explicitly wrote, and no others.
+
+### Think in object graphs, not in rules
+
+Rather than memorising "shallow copy shares children", draw what exists:
+
+```
+a ──► outer A ──► inner1
+              └─► inner2
+
+b ──► outer B ──► inner1     ← same two inner objects
+              └─► inner2
+```
+
+Every question about the pair now answers itself. And the graph can contain aliases that no rule about copying would predict:
+
+```python
+a = [1, 2]
+b = [a, a]        # one list, referenced twice
+
+b[0].append(3)
+a                 # [1, 2, 3]
+b                 # [[1, 2, 3], [1, 2, 3]]
+b[0] is b[1]      # True
+```
+
+Nothing was copied here at all — `b` just holds the same reference twice.
+
+### Tuples don't freeze what they contain
+
+```python
+t = ([1, 2], 3)
+
+t[0] = [100]      # TypeError — can't rebind a tuple slot
+t[0].append(99)   # fine      — the list itself is still mutable
+t                 # ([1, 2, 99], 3)
+```
+
+The tuple's immutability is about *its own* slots, not about the objects reachable through them. Immutable container ≠ immutable contents.
+
+### `+=` is not always in-place
+
+```python
+a = [1, 2]
+b = a
+a += [3]
+
+a is b            # True  — list.__iadd__ mutates in place (it's extend)
+b                 # [1, 2, 3]
+```
+
+```python
+a = (1, 2)
+b = a
+a += (3,)
+
+a is b            # False — tuples have no __iadd__, so this is a = a + (3,)
+b                 # (1, 2)
+```
+
+`x += y` tries `__iadd__` first and falls back to `x = x + y`. So whether `+=` mutates or rebinds depends entirely on the type — and `a += [3]` is *not* a synonym for `a = a + [3]`, which would build a new list and leave `b` alone.
+
+The two rules collide in one of Python's best puzzles:
+
+```python
+t = ([1, 2], 3)
+t[0] += [99]      # TypeError: 'tuple' object does not support item assignment
+t                 # ([1, 2, 99], 3)  ← ...and yet it worked
+```
+
+`__iadd__` mutates the list successfully, then the augmented-assignment protocol tries to store the result back into `t[0]` and the tuple refuses. The exception is real and the mutation is real.
+
+### How arguments are passed
+
+"Python is pass by reference" is the wrong sentence to have ready. The accurate one:
+
+> Arguments are passed by *object reference*; parameters are local names bound to the caller's objects.
+
+Which means the mutation/rebinding distinction decides what the caller sees:
+
+```python
+def mutate(x):
+    x.append(99)      # caller sees [1, 2, 99]
+
+def rebind(x):
+    x = x + [99]      # caller sees [1, 2] — x is a local name
+```
+
+### `id()` is stable for an object's lifetime
+
+A tempting wrong inference: "a list reallocates its storage when it grows, so `id(x)` might change." It doesn't. The list *object* stays put; what reallocates is the internal array of pointers it owns.
+
+```
+list object          ← id() refers to this, and never changes
+    └── element storage   ← this buffer can be reallocated freely
+```
+
+```python
+x = [1, 2]
+d = {id(x): "x"}
+x.append(3)
+d[id(x)]          # still "x"
+```
+
+Two caveats. `id()` is only unique among *live* objects — once an object is collected, CPython happily reuses the address, which is why `id(a) == id(b)` comparisons against temporaries are meaningless. And using `id(x)` as a key doesn't make `x` hashable; it makes an *integer* the key, and the dict then keeps no reference to the list, so nothing stops it being garbage collected out from under you.
+
+### Hashable, not immutable
+
+The rule isn't "immutable objects can be dict keys":
+
+```python
+[1, 2]              # ❌ unhashable
+{1, 2}              # ❌ unhashable
+{"x": 1}            # ❌ unhashable
+
+(1, 2)              # ✅
+frozenset({1, 2})   # ✅
+([1, 2], 3)         # ❌ — immutable tuple, unhashable contents
+```
+
+A tuple is hashable only if **all of its elements** are, because `tuple.__hash__` combines the hashes of its elements. That last line is the counterexample worth remembering: the object you'd reach for as "the immutable one" isn't a valid key.
+
+The requirement a dict actually imposes is a stable `__hash__` plus a consistent `__eq__` — objects that compare equal must hash equal, or lookups miss.
+
+### Mutable state in `__hash__` breaks dictionaries
+
+```python
+class Person:
+    def __init__(self, name):
+        self.name = name
+    def __hash__(self):
+        return hash(self.name)
+    def __eq__(self, other):
+        return self.name == other.name
+
+p = Person("Alice")
+d = {p: "engineer"}
+
+p.name = "Bob"
+d[p]              # KeyError (usually)
+```
+
+The entry is still in the dict — it was filed under `hash("Alice")`, and the lookup now probes where `hash("Bob")` points. It comes back if the two happen to collide into the same slot, which is worse than a clean failure: the dict is now nondeterministically broken. The invariant is that **a key's hash must not change while it's in use as a key** — so don't derive `__hash__` from mutable attributes. (Note that defining `__eq__` without `__hash__` makes a class unhashable automatically, and that `@dataclass(frozen=True)` gives you a correct pair for free.)
+
+### `==` and `is` can disagree in both directions
+
+```python
+class A:
+    def __eq__(self, other):
+        return True
+
+a, b = A(), A()
+a == b            # True  — equal by your definition
+a is b            # False — different objects
+```
+
+Equality is whatever `__eq__` says; identity is not negotiable. (`float('nan')` manages the reverse: `n is n` is `True` while `n == n` is `False`, which is why `nan` in a list is found by `in` but not by `==`.)
+
+### Class attributes vs instance attributes
+
+```python
+class A:
+    x = 10
+
+a, b = A(), A()
+a.x = 20          # does NOT change A.x
+
+a.x               # 20  — now in a.__dict__
+b.x               # 10  — still found on the class
+A.x               # 10
+```
+
+Assignment through an instance never writes to the class; it creates an instance attribute that **shadows** the class one. Reading falls back to the class, writing does not — which is exactly the asymmetry that makes this confusing.
+
+Mutation, of course, doesn't shadow anything, which is the actual bug this causes in real code:
+
+```python
+class Basket:
+    items = []            # one list, shared by every instance
+
+b1, b2 = Basket(), Basket()
+b1.items.append("apple")
+b2.items                  # ['apple']
+```
+
+That's the class-level equivalent of the mutable-default trap: one object created once, shared by everyone. Mutable state belongs in `__init__`.
+
+The lookup order behind all of this is the [descriptor protocol](#descriptors--the-protocol-behind-property-methods-and-classmethod) — data descriptor on the class, then `instance.__dict__`, then class attribute / non-data descriptor, then `__getattr__`.
+
+### `staticmethod` and `classmethod`
+
+```python
+class A:
+    def normal(self): ...          # a.normal() passes a as self
+    @staticmethod
+    def static(): ...              # a.static() passes nothing
+    @classmethod
+    def cls_method(cls): ...       # A.cls_method() and A().cls_method() both pass A
+```
+
+`a.method()` is `type(a).method.__get__(a, type(a))()` — the binding is done by the descriptor protocol, not by a special rule for methods, which is why `self` "appears automatically". `staticmethod` binds nothing; `classmethod` binds the class, and binds the *subclass* when called on one — which is what makes it the right tool for alternative constructors:
+
+```python
+class User:
+    @classmethod
+    def from_json(cls, data):
+        return cls(**data)         # a subclass gets a subclass instance back
+```
+
+### The short list
+
+| The instinct | The correction |
+|---|---|
+| `b = a` copies | It aliases — one object, two names |
+| `a.copy()` shares the outer object | New outer object, *shared children* |
+| `[row[:] for row in a]` is a deepcopy | It copies only the levels you wrote |
+| `a[0] = x` and `a[0].append(x)` are similar | Rebinding vs mutation — completely different |
+| Immutable ⇒ hashable | Hashable is the real requirement; `([1], 2)` isn't |
+| Tuple ⇒ contents immutable | Only its own slots are fixed |
+| `+=` always mutates in place | Depends on `__iadd__`; tuples rebind |
+| `a.x = 20` changes the class attribute | It creates an instance attribute that shadows it |
+| Growing a list can change its `id()` | Identity is stable for the object's lifetime |
+| Python passes by reference | Passes object references *by value* — names bound to objects |
+| Late binding is an optimisation | It's ordinary lexical closure semantics |
 
 ## Generators: producing *and* consuming
 
@@ -704,6 +973,8 @@ except ValueError as e:
 ```
 
 Related scoping trivia worth having: a comprehension's loop variable is confined to the comprehension (unlike a `for` loop, whose variable leaks into the enclosing scope and is still bound after the loop ends), and the `else` clause of a `try` runs only when no exception was raised — useful for keeping the `try` body down to the one line that can actually fail.
+
+This is one item from a longer list — handler ordering, what `finally` does to an in-flight `return`, `raise` vs `raise e`, and why a custom exception's `args` has to stay a valid argument list — collected in [Python Exception Handling: The Parts I Got Wrong](/python-exception-handling/).
 
 ## Floats and floor division
 
