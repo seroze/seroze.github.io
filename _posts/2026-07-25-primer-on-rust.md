@@ -2311,3 +2311,18 @@ serde = "1"   # missing features = ["derive"]
 and the derive macro simply doesn't exist. The confusing part is what the compiler tells you: it reports that your type doesn't implement `Serialize`/`Deserialize` — even though the `#[derive(Serialize, Deserialize)]` attribute is sitting right there in the code. The error points at the symptom, not the cause.
 
 Whenever a derive that's plainly written in your source seems to have had no effect, check the crate's feature flags first.
+
+## Why Rust doesn't have goroutines
+
+Go's goroutines are cheap because each one starts with a small stack (a few KB) that grows and shrinks on demand, and Go's runtime multiplexes many of them onto a few OS threads. Java threads and Rust's `std::thread` are the opposite: real OS threads with fixed-size stacks, so memory and context-switching costs cap you in the thousands.
+
+| | Execution unit | OS thread? | Stack |
+|---|---|---|---|
+| Java | `Thread` | Yes | Fixed (~1 MB, configurable) |
+| Go | goroutine | No (M:N scheduler) | Grows/shrinks dynamically |
+| Rust | `std::thread` | Yes | Fixed (configurable) |
+| Rust | `async` task | No (executor-managed) | None |
+
+Rust gets Go-like scalability from `async`, not from growable stacks. An `async fn` compiles into a state machine that stores only the locals which must survive across `.await` points — there is no dedicated stack at all, and an executor like Tokio polls only the tasks that can actually make progress. That's how a small pool of OS threads runs millions of concurrent tasks.
+
+Worth knowing: pre-1.0 Rust *did* have green threads with segmented, growable stacks, much like early Go. It was removed before 1.0 — it forced a runtime on every program, hurt C interoperability, and clashed with the zero-cost-abstraction goal. The ecosystem settled on stackless futures plus a user-chosen executor instead.
