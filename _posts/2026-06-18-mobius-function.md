@@ -93,7 +93,7 @@ The inversion formula lets you recover $$g$$ from $$f$$ when $$f$$ is a sum of $
 
 **Inverse:** then $$g(n) = \displaystyle\sum_{d \mid n} \mu\!\left(\frac{n}{d}\right) f(d)$$
 
-Think of it as the multiplicative analogue of prefix sums and difference arrays. $$f$$ is the "prefix sum" over divisors, and applying $$\mu$$ recovers the original $$g$.
+Think of it as the multiplicative analogue of prefix sums and difference arrays. $$f$$ is the "prefix sum" over divisors, and applying $$\mu$$ recovers the original $$g$$.
 
 ---
 

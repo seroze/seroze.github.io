@@ -27,7 +27,7 @@ $$
 
 over all final arrays $$B$$.
 
-Constraints: $$N \le 10^5$$, $$0 \le P, Q \le N-1$$, $$|A_i| \le 10^9$$, sum of $$N$$ up to $$3 \cdot 10^5$$.
+Constraints: $$N \le 10^5$$, $$0 \le P, Q \le N-1$$, $$\lvert A_i \rvert \le 10^9$$, sum of $$N$$ up to $$3 \cdot 10^5$$.
 
 ## The shift in perspective
 
@@ -43,10 +43,10 @@ The two extreme elements are already contributing to the span. Any additional ga
 
 So temporarily ignore the smallest and largest elements and look only at the middle of the sorted array.
 
-**The main observation: every element in the middle can increase the span by its absolute value $$|x|$$** — if we have an addition operation left, we merge it into the maximum; if we have a subtraction operation left, we subtract it from the smallest element. In detail, for a middle element $$v$$:
+**The main observation: every element in the middle can increase the span by its absolute value $$\lvert x \rvert$$** — if we have an addition operation left, we merge it into the maximum; if we have a subtraction operation left, we subtract it from the smallest element. In detail, for a middle element $$v$$:
 
 - **If $$v > 0$$:** merge it into the maximum with an *addition* ($$\max + v$$), or merge it into the minimum with a *subtraction* ($$\min - v$$). Either way the span grows by $$v$$.
-- **If $$v < 0$$:** merge it into the minimum with an *addition* ($$\min + v$$), or merge it into the maximum with a *subtraction* ($$\max - v$$). Either way the span grows by $$|v|$$.
+- **If $$v < 0$$:** merge it into the minimum with an *addition* ($$\min + v$$), or merge it into the maximum with a *subtraction* ($$\max - v$$). Either way the span grows by $$\lvert v \rvert$$.
 
 This is the crux: **every middle element can be cashed in with *either* operation type**, and it's always worth exactly its absolute value. A positive element prefers an addition but can settle for a subtraction; a negative element is the mirror image. So the two budgets aren't really separate — they pool into a single budget of $$P + Q$$ operations, each of which consumes one middle element and pays out its magnitude.
 
