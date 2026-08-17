@@ -61,6 +61,22 @@ kramdown:
 
 **Why single `$` breaks things:** kramdown treats `$` as a regular character and processes the content inside as markdown, escaping underscores and backslashes before MathJax ever sees it.
 
+### Never put a bare `|` inside inline math
+
+Use `\lvert x \rvert` for absolute values and `\mid` for divisibility — **never a bare `|`** — in any `$$...$$` that shares a line with prose.
+
+kramdown's native table syntax triggers on any line containing `|` characters. Inside a *standalone* `$$...$$` paragraph the math block wins and pipes are safe, but inline math on a text line (or in a list item) gets shredded: kramdown splits the line into table cells, which breaks the `$$` pairing, drops the bars, and leaks raw `$$` and `**` into the page. The damage is silent — no build error, just a mangled paragraph wrapped in a stray `<table>`.
+
+To check a post before publishing, render it and look for the two tells:
+
+```bash
+# strip frontmatter first; ruby isn't installed locally, so use docker
+docker run --rm -v "$PWD":/w -w /w ruby:3.2-slim \
+  sh -c "gem install kramdown --no-document -q 2>/dev/null && kramdown --math-engine mathjax post.md" > out.html
+grep -c '<table>' out.html   # 0, unless the post has a real table
+grep -c '\$\$'    out.html   # always 0 — a survivor means unpaired delimiters
+```
+
 ## Pagination
 
 The homepage shows 10 posts per page using `jekyll-paginate` (v1, the only paginator GitHub Pages supports).

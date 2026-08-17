@@ -138,14 +138,27 @@ That kills both objections at once:
 
 A permutation DP is lossless precisely when detouring through an intermediate point is free, and on a line it always is. Change the geometry — put the elevator on a graph where the shortest path between two floors doesn't pass through the third — and this argument stops working; you'd have to run the DP on all-pairs shortest paths instead of raw distances to recover it.
 
-### The formal version
+### Making that argument airtight
 
-If you want it as a proof rather than an intuition: take any physical route that fulfills everything, and let $$t_i$$ be the time request `i` is *first* fulfilled. Sort the requests by $$t_i$$ to get a permutation $$\pi$$. I claim the DP's cost for that permutation is at most $$\max_i t_i$$, by induction on the prefix:
+The zero-cost story above is enough to convince yourself and start typing, but the actual proof is short, so here it is.
 
-- **Base.** $$dp[\{\pi_1\}][\pi_1] = \max(arrival_{\pi_1}, |start - floor_{\pi_1}|) \le t_{\pi_1}$$, since the elevator needed at least $$|start - floor_{\pi_1}|$$ seconds to get there and couldn't fulfill it before its arrival.
-- **Step.** Between $$t_{\pi_{k-1}}$$ and $$t_{\pi_k}$$ the real elevator travelled from $$floor_{\pi_{k-1}}$$ to $$floor_{\pi_k}$$, so $$t_{\pi_k} - t_{\pi_{k-1}} \ge |floor_{\pi_{k-1}} - floor_{\pi_k}|$$. Combined with $$t_{\pi_k} \ge arrival_{\pi_k}$$ and the inductive hypothesis, the DP's $$\max(\cdot + \text{travel}, arrival)$$ stays $$\le t_{\pi_k}$$.
+Take any real route — the elevator physically moving, second by second — that fulfills everything. For each request `i`, write $$t_i$$ for the moment it *first* gets fulfilled, and sort the requests by that. You get an order; call it $$\pi$$. The claim is that the DP, handed this particular order, finishes no later than the real route did.
 
-So DP optimum ≤ true optimum. The other direction is trivial — every DP schedule is a route you can literally drive. Note the argument never assumes the floors are distinct: when two requests share a floor the travel term is `0` and the step still holds.
+Start with whichever request came first. The DP charges
+
+$$dp[\{\pi_1\}][\pi_1] = \max\bigl(arrival_{\pi_1},\; \lvert start - floor_{\pi_1} \rvert\bigr)$$
+
+and the real route had to pay both of those too: it couldn't reach that floor in fewer than $$\lvert start - floor_{\pi_1} \rvert$$ seconds, and it certainly couldn't fulfill the request before the request existed. So the DP's number is already at most $$t_{\pi_1}$$.
+
+Then the step. Between $$t_{\pi_{k-1}}$$ and $$t_{\pi_k}$$ the real elevator physically got from one floor to the other, and that costs what it costs:
+
+$$t_{\pi_k} - t_{\pi_{k-1}} \;\ge\; \lvert floor_{\pi_{k-1}} - floor_{\pi_k} \rvert$$
+
+We also know $$t_{\pi_k} \ge arrival_{\pi_k}$$, because you can't fulfill a request early. Feed those two facts plus the induction hypothesis into the DP's $$\max(\text{previous} + \text{travel},\; arrival)$$ and it can't come out above $$t_{\pi_k}$$ either.
+
+So the DP's optimum is at most the true optimum. The other direction takes no work: every schedule the DP produces is a route you can literally drive, so it can't beat reality.
+
+What I like about this proof is what it never uses. At no point did I assume the floors are distinct. When two requests share a floor the travel term is simply `0` and the step goes through unchanged — the duplicate-floor worry I'd been chewing on for twenty minutes, dissolved in one line.
 
 ## Implementation
 
