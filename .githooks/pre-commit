@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+#
+# Checks staged posts for kramdown math-rendering breakage before it goes live.
+# Enabled via `git config core.hooksPath .githooks` (see CLAUDE.md).
+
+exec "$(git rev-parse --show-toplevel)/script/check-post-math.sh" --staged

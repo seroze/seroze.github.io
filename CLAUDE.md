@@ -67,15 +67,41 @@ Use `\lvert x \rvert` for absolute values and `\mid` for divisibility — **neve
 
 kramdown's native table syntax triggers on any line containing `|` characters. Inside a *standalone* `$$...$$` paragraph the math block wins and pipes are safe, but inline math on a text line (or in a list item) gets shredded: kramdown splits the line into table cells, which breaks the `$$` pairing, drops the bars, and leaks raw `$$` and `**` into the page. The damage is silent — no build error, just a mangled paragraph wrapped in a stray `<table>`.
 
-To check a post before publishing, render it and look for the two tells:
+kramdown only starts a table at a **block boundary**, which is why the bug is
+inconsistent. A line trips it when all of these hold:
+
+- the line starts a block — blank line before it, or it's a list-item line.
+  A continuation line inside an existing paragraph or bullet is safe.
+- the `|` is unescaped (`\|` is fine) and not inside a `code span`.
+- the line mixes math with prose. A standalone `$$...$$` line on its own is
+  parsed as a math block before the table parser ever sees it — which is why
+  display equations full of pipes render fine.
+
+## The pre-commit hook
+
+`script/check-post-math.sh` renders staged posts through real kramdown and
+fails the commit on either tell:
+
+1. **leaked `$$` in the rendered HTML** — delimiters didn't pair. Catches the
+   pipe bug *and* plain typos like `$$g$` (one closing dollar).
+2. **more `<table>` in the output than in the source** — phantom tables, i.e.
+   the pipe bug. Source tables are counted as runs of lines starting with `|`,
+   so posts with genuine tables don't false-positive.
+
+Ruby isn't installed locally, so rendering happens in Docker via the
+`seroze-blog-mathcheck:1` image (built once from `script/mathcheck.Dockerfile`,
+~1s per commit thereafter). With no Docker daemon it warns loudly and falls
+back to a source-level lint that applies the block-boundary rules above —
+approximate, but it catches both root causes.
+
+**The hook is opt-in per clone**, since `core.hooksPath` is local config:
 
 ```bash
-# strip frontmatter first; ruby isn't installed locally, so use docker
-docker run --rm -v "$PWD":/w -w /w ruby:3.2-slim \
-  sh -c "gem install kramdown --no-document -q 2>/dev/null && kramdown --math-engine mathjax post.md" > out.html
-grep -c '<table>' out.html   # 0, unless the post has a real table
-grep -c '\$\$'    out.html   # always 0 — a survivor means unpaired delimiters
+git config core.hooksPath .githooks
 ```
+
+Run it by hand on any post with `script/check-post-math.sh _posts/*.md`.
+Bypass a single commit with `git commit --no-verify`.
 
 ## Pagination
 
