@@ -44,7 +44,22 @@ my-project/
         └── __init__.py
 ```
 
-`uv init` also creates a virtual environment at `.venv/` automatically on first use.
+Notice there's no `.venv/` yet. That's by design — `uv init` only writes files
+(`pyproject.toml`, `main.py`, `README.md`, `.python-version`) and runs `git init`.
+It never resolves or installs anything, so there's nothing to put in an
+environment yet.
+
+`uv` creates `.venv` **lazily**, on the first command that actually needs one:
+
+```bash
+uv venv          # explicit — creates .venv right now
+uv run main.py   # creates .venv on demand, then runs
+uv add pytest    # creates .venv, then installs
+uv sync          # creates .venv from the lockfile
+```
+
+So it's not that the venv appears automatically when you init — it appears the
+first time you ask uv to do something that requires an interpreter and packages.
 
 ---
 
@@ -360,6 +375,51 @@ uv add pytest --dev
 pip install pytest
 ```
 
+One naming trap first: it's `uv run pytest`, not `uv run test`. `uv run` executes
+a command inside the project venv, so `test` means nothing unless you've defined
+a script by that name.
+
+### How pytest finds your tests
+
+You never register anything. Pytest walks the directory tree and collects
+by name:
+
+- files matching `test_*.py`
+- classes matching `Test*` — and they **must not** define `__init__`
+- methods and functions matching `test_*`
+
+That last rule about `__init__` catches people coming from `unittest`. A pytest
+test class isn't an object you construct; it's just a namespace for grouping
+related tests. If you give it a constructor, pytest silently skips the whole
+class with a warning.
+
+```python
+# tests/test_multidict.py
+
+import pytest                       # not collected — not a test
+from my_project import MultiDict    # not collected
+
+@pytest.fixture                     # not collected — it's a fixture
+def md():
+    return MultiDict([("a", 1), ("b", 2), ("a", 3)])
+
+class TestConstruction:             # collected: name starts with Test, no __init__
+    def test_from_pairs(self, md):  # collected: name starts with test_
+        assert len(md) == 3
+
+class TestLookup:                   # collected
+    def test_getitem_returns_first_value(self, md):
+        assert md["a"] == 1
+```
+
+`TestConstruction` and `TestLookup` aren't special types you inherit from — they
+are plain classes that happen to be named `Test*`. Everything else in the file
+(the imports, the `md` fixture) is just module-level code that pytest loads but
+doesn't run as a test.
+
+Running `pytest tests/` runs *all* of them. Each test runs independently: they
+share no state, and one failing doesn't stop the rest.
+
 ### Basic usage
 
 ```bash
@@ -466,6 +526,39 @@ def test_user_age(sample_user):
     assert sample_user.age == 30
 ```
 
+The part that matters most: **the fixture re-runs for every test that asks for
+it.** Each test gets a fresh object, not a shared one. Stick a `print` in a
+fixture and you can watch it happen:
+
+```
+>>> fixture ran, building a fresh MultiDict
+test_one sees: [('a', 1), ('a', 999)]     <- test_one mutated it
+>>> fixture ran, building a fresh MultiDict
+test_two sees: [('a', 1)]                 <- test_two is unaffected
+```
+
+That's why a test class can freely `del md["a"]` or call `md.clear()` without
+wrecking the test that runs next. (If you *want* one shared instance, that's
+what `@pytest.fixture(scope="module")` and `scope="session"` are for.)
+
+Where you define a fixture decides who can see it:
+
+- inside a test class — only that class's tests
+- at module level in a test file — every test in that file
+- in `tests/conftest.py` — every test file in the directory and below
+
+### Plain `assert` — no `assertEqual` needed
+
+Pytest rewrites the bytecode of your `assert` statements so a failure reports
+what the values actually were, which is why you never need `unittest`'s
+`assertEqual` family:
+
+```
+>       assert md.keys() == ["a", "b", "b"]
+E       AssertionError: assert ['a', 'b', 'a'] == ['a', 'b', 'b']
+E         At index 2 diff: 'a' != 'b'
+```
+
 ### Parametrize — run one test with multiple inputs
 
 ```python
@@ -481,6 +574,20 @@ def test_add(a, b, expected):
 ```
 
 This runs `test_add` three times with different inputs and reports each separately.
+
+A parametrized test can take fixtures too — pytest matches arguments by name, so
+it works out which is which:
+
+```python
+@pytest.mark.parametrize("key", ["Content-Type", "content-type", "CONTENT-TYPE"])
+def test_lookup_ignores_case(self, ci, key):   # ci = fixture, key = parameter
+    assert ci[key] == "json"
+```
+
+Finally, if you get tired of typing a path every time, the
+`[tool.pytest.ini_options]` block back in `pyproject.toml` is where
+`testpaths = ["tests"]` lives — with that set, a bare `uv run pytest` knows
+where to look.
 
 ---
 
