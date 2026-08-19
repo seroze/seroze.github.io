@@ -3,7 +3,7 @@ layout: post
 title: "[yukicoder] Contest 509 — Product: the answer is always 2^k times 2^k-1"
 date: 2026-08-18 00:00:00 +0530
 categories: competitive-programming
-tags: [competitive_programming, yukicoder, bitmasks, greedy, python]
+tags: [competitive_programming, yukicoder, bitmasks, greedy]
 author: "Seroze"
 published: true
 ---

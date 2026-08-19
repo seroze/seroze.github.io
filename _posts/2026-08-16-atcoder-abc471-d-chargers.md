@@ -3,7 +3,7 @@ layout: post
 title: "[AtCoder] ABC471 D — Chargers: subtract the common term"
 date: 2026-08-16 00:00:00 +0530
 categories: competitive-programming
-tags: [competitive_programming, atcoder, heap, invariants, python]
+tags: [competitive_programming, atcoder, heap, invariants]
 author: "Seroze"
 published: true
 ---
