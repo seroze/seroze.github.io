@@ -49,6 +49,11 @@ features and circuits a model is actually running, you get evidence about *why* 
 an answer — a channel the model isn't optimising against, and one that can catch the problem
 before it shows up in behaviour.
 
+Some of this can be measured behaviourally, though, and it's worth knowing how those numbers
+are built before reading the papers. Work on collusion and self-monitoring — can a model
+recognise output written by a copy of itself? — reports results as ROC curves and AUC, which
+I wrote up separately in [What an ROC curve actually tells you]({% post_url 2026-08-19-roc-curves-and-auc %}).
+
 ## How to inspect neural networks
 
 The basic move is to stop treating the network as a function from input to output and start
