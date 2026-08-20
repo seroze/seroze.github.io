@@ -146,6 +146,88 @@ const int& r3 = temp;
 That's the mechanism behind the old advice to take parameters by `const T&` —
 it accepts both named objects and temporaries.
 
+## A reference is not an object
+
+Worth pinning down before going further, because it comes back when we get to
+value categories: a reference is not a separate object that stores something.
+It's an **alias** — another name for an object that already exists.
+
+The contrast with pointers makes it concrete:
+
+```cpp
+int x = 10;
+
+int* p = &x;
+int& r = x;
+```
+
+```
+x
+┌──────┐
+│  10  │
+└──────┘
+  ↑
+  │
+  └──── r          r is another name for x
+
+p
+┌──────┐
+│  &x  │────────→ x
+└──────┘
+```
+
+`p` is a real object. It has its own storage and its own address, `&p`, and you
+can point it somewhere else whenever you like:
+
+```cpp
+p = nullptr;
+p = &some_other_object;
+```
+
+`r` is not a second object sitting somewhere holding "the address of `x`".
+`&r` gives you the address of `x`, because `r` *is* `x` under a different name.
+So
+
+```cpp
+r = 20;
+```
+
+is just `x = 20`. And there is no way to say "make `r` refer to `y` instead" —
+writing `r = y;` means `x = y;`. Once bound, a reference stays bound.
+
+This is also why you can't have an array of references:
+
+```cpp
+int& arr[3] = {a, b, c};   // not allowed
+```
+
+If it worked, `arr[0]` would simply be another name for `a`, `arr[1]` for `b`,
+and so on. But an array is defined as a run of *objects* laid out in memory.
+With pointers there really are three objects to lay out:
+
+```
+arr
+ ↓
+┌────────┬────────┬────────┐
+│ ptr 0  │ ptr 1  │ ptr 2  │
+└────────┴────────┴────────┘
+```
+
+each with its own value, each independently changeable. References have no
+corresponding "reference object" to occupy an element slot, so there's nothing
+for the array to be made of.
+
+None of this means the compiler can't implement `int& r = x;` using a machine
+address under the hood. It usually does. But that's an implementation detail,
+and the language semantics are the thing to reason with:
+
+> A reference is not an object containing an address. It is an alias to an
+> object.
+
+Keep that in mind for the next part — value categories are precisely a
+classification of how expressions identify objects, and references are the
+mechanism that binds to them.
+
 ## The payoff: not copying a million integers
 
 Here's the whole reason anyone cares.
