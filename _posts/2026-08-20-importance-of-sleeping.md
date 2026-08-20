@@ -3,7 +3,7 @@ layout: post
 title: "Importance of sleeping"
 date: 2026-08-20 00:00:00 +0530
 categories: biology
-tags: [biology, sleep]
+tags: [biology, sleep, recovery]
 author: "Seroze"
 published: true
 ---
