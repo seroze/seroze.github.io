@@ -58,6 +58,6 @@ Duration and timing interact, which is where the stage breakdown above starts to
 
 Regularity may count for as much as total hours. Recent work suggests consistent sleep and wake times predict mortality at least as well as duration does, so seven hours on a fixed schedule beats averaging eight on a chaotic one.
 
-The practical test is simple. If you wake up without an alarm at roughly the same time and don't crash in the afternoon, you're getting enough. Needing an alarm every single day means you're running a deficit.
+**The practical test is simple. If you wake up without an alarm at roughly the same time and don't crash in the afternoon, you're getting enough. Needing an alarm every single day means you're running a deficit.**
 
-Sleep doesn't manufacture anything. It just decides how much of what you already have actually gets used.
+**Sleep doesn't manufacture anything. It just decides how much of what you already have actually gets used.**
