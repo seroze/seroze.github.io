@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "Chronic Self Deception for Ambitious People"
+title: "[Psychology] Chronic Self Deception for Ambitious People"
 date: 2026-08-22 00:00:00 +0530
 categories: psychology
 tags: [psychology, productivity, focus, habits]
