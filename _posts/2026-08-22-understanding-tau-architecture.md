@@ -16,6 +16,339 @@ That layering is the part I want to work through, because it is the same decompo
 
 These are my own notes from reading the source, written as I go. Corrections welcome.
 
+## First, build the toy version
+
+I couldn't read tau's class list cold and get anything out of it. `AgentMessage`, `AgentEvent`, `AssistantMessageEvent`, `AgentHarness`, `CodingSession` — the names are fine, but a name only means something once you've felt the absence of the thing it names. So before going further I wrote the smallest agent that actually talks to a model, and read tau afterwards as *that, plus everything I skipped*.
+
+Here's the whole thing. It runs against a local Ollama, so no API key and nothing to sign up for.
+
+```python
+from dataclasses import dataclass
+from typing import Literal, Any
+
+from abc import ABC, abstractmethod
+import httpx
+import asyncio
+
+try:
+    import readline  # noqa: F401  -- line editing + history for input()
+except ImportError:
+    pass
+
+Role = Literal["system", "user", "assistant", "tool"]
+
+"""
+Agent
+  │
+┌────────────┼────────────┐
+│            │            │
+Conversation   LLMProvider   ToolRegistry
+│            │            │
+│            │       WeatherTool
+│            │       SearchTool
+│            │       BashTool
+│            │
+│      OllamaProvider
+│      OpenAIProvider
+│
+├── UserMessage
+├── AssistantMessage
+├── SystemMessage
+└── ToolMessage
+
+"""
+
+@dataclass(slots=True)
+class Message(ABC):
+    content: str
+
+    @property
+    @abstractmethod
+    def role(self) -> Role:
+        ...
+
+    @abstractmethod
+    def to_dict(self) -> dict[str, Any]:
+        ...
+
+
+@dataclass
+class UserMessage(Message):
+
+    # content: str
+
+    @property
+    def role(self) -> Role:
+        return "user"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "role": "user",
+            "content": self.content,
+        }
+
+@dataclass
+class AssistantMessage(Message):
+
+    # content: str
+
+    @property
+    def role(self) -> Role:
+        return "assistant"
+
+    def to_dict(self):
+        return {
+            "role": "assistant",
+            "content": self.content,
+        }
+
+
+@dataclass(slots = True)
+class SystemMessage(Message):
+    # content: str
+
+    @property
+    def role(self) -> Role:
+        return "system"
+
+    def to_dict(self):
+        return {
+            "role": "system",
+            "content": self.content,
+        }
+
+@dataclass(slots = True)
+class ToolCall:
+    """
+        A ToolCall is not a Message.
+        It's something inside an AssistantMessage.
+    """
+    content: str
+    name: str
+    arguments: dict[str, Any]
+    tool_call_id: str # additional variables
+
+    @property
+    def role(self) -> Role:
+        return "tool"
+
+    def to_dict(self):
+        return {
+            "role": "tool",
+            "content": self.content,
+        }
+
+class Tool(ABC):
+
+    @property
+    @abstractmethod
+    def name(self):
+        ...
+
+    async def execute(
+        self,
+        arguments: dict[str, Any],
+    ) -> str:
+        ...
+
+
+class WeatherTool(Tool):
+
+    @property
+    def name(self) -> str:
+        return "weather"
+
+    async def execute(
+        self,
+        arguments,
+    ):
+        ...
+
+
+class ToolRegistry:
+
+    def __init__(self):
+        self._tools = {}
+
+    def register(self, tool: Tool):
+        self._tools[tool.name] = tool
+
+    def get(self, name):
+        return self._tools[name]
+
+    # Now the agent simply asks
+    # tool = registry.get(call.name)
+
+
+class Conversation:
+
+    """
+
+    conversation.add(UserMessage("Hello"))
+    conversation.add(AssistantMessage("Hi"))
+
+    """
+
+    def __init__(self):
+        self._messages: list[Message] = []
+
+    def add(self, message: Message):
+        self._messages.append(message)
+
+    @property
+    def messages(self):
+        return self._messages
+        # return tuple(self._messages)
+
+    def to_dict(self):
+        return [
+            m.to_dict() for m in self._messages
+        ]
+
+
+    def serialize(self):
+
+        return [
+            m.to_dict()
+            for m in self._messages
+        ]
+
+class LLMProvider:
+    async def generate(
+        self,
+        messages: list[Message]
+    ) -> Message:
+        ...
+
+class OllamaProvider(LLMProvider):
+
+    def __init__(self):
+
+        self.base_url="http://localhost:11434/v1"
+        self.api_key="ollama"
+
+        self.client = httpx.AsyncClient(
+            base_url = self.base_url,
+            # api_key = self.api_key,
+            timeout = 300,
+        )
+
+
+    async def generate(
+        self,
+        messages: list[Message]
+    ) -> Message:
+
+        payload = {
+            "model" : "gpt-oss:20b",
+            "messages" : [m.to_dict() for m in messages],
+            "stream": False,
+        }
+        resp = await self.client.post(
+            "/chat/completions",
+            json = payload,
+        )
+
+        resp.raise_for_status()
+
+        data = resp.json()
+
+        return AssistantMessage(
+            content = data["choices"][0]["message"]["content"],
+        )
+
+    async def aclose(self) -> None:
+        await self.client.aclose()
+
+class Agent:
+
+    def __init__(
+        self,
+        provider: LLMProvider,
+    ):
+        self.provider = provider
+        # self.history: list[Message] = []
+        self.conversation = Conversation()
+
+    async def chat(
+        self,
+        prompt: str
+    ) -> str:
+
+        self.conversation.add(
+            UserMessage(prompt)
+        )
+
+        reply = await self.provider.generate(
+            self.conversation.messages,
+        )
+
+        self.conversation.add(reply)
+
+        return reply.content
+
+
+async def repl(agent: Agent) -> None:
+
+    """
+    Read a prompt, send it through the agent, print the reply, repeat.
+    /exit, /quit, Ctrl-D or Ctrl-C ends the session.
+    """
+
+    print('mini-agent ready. "/exit" or Ctrl-D to quit.')
+
+    while True:
+
+        try:
+            # input() blocks, so keep it off the event loop
+            prompt = await asyncio.to_thread(input, "\nyou> ")
+        except (EOFError, KeyboardInterrupt):
+            print()
+            break
+
+        prompt = prompt.strip()
+
+        if not prompt:
+            continue
+
+        if prompt in {"/exit", "/quit"}:
+            break
+
+        try:
+            reply = await agent.chat(prompt)
+        except httpx.HTTPError as exc:
+            # a dead ollama shouldn't kill the whole session
+            print(f"\n[error] {exc}")
+            continue
+
+        print(f"\nagent> {reply}")
+
+
+async def main() -> None:
+
+    provider = OllamaProvider()
+    agent = Agent(provider)
+
+    try:
+        await repl(agent)
+    finally:
+        await provider.aclose()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+That's a working chat agent. `Message` and its four subclasses are the vocabulary, `Conversation` owns the transcript, `LLMProvider` is the seam that lets Ollama be swapped for OpenAI without anything above it noticing, `Tool` and `ToolRegistry` are the beginnings of letting the model act, and `Agent.chat` is the whole brain: append the user's message, send the transcript, append the reply, return it.
+
+Two things about it are worth staring at, because both are exactly where tau grows.
+
+The first is that `Agent.chat` isn't a loop. It sends once and returns once. The moment you wire `ToolRegistry` into it, it has to become a loop — call the model, see whether the reply contains tool calls, run them, append the results as tool messages, call the model again, and keep going until it stops asking for tools. That loop is the actual definition of an agent, and everything tau calls a *harness* is that loop plus the bookkeeping it needs.
+
+The second is that `provider.generate` returns a finished `AssistantMessage`. It waits for the whole response, then hands you the completed object. That's fine for a toy and unacceptable for anything you sit in front of, because you want to watch the model type. The instant you switch it to streaming, one return value becomes a sequence of partial things arriving over time — and you need names for those partial things. That's where tau's event types come from.
+
+Hold onto that. `Message` here is `AgentMessage` there. The two event types tau has and this file doesn't are precisely the two things this file gave up: narration of the loop, and narration of a message being assembled.
+
 ## tau_agent: messages are nouns, events are announcements
 
 I started with `tau_agent` because it's the piece everything user-facing is built around — `tau_coding` is essentially a shell over it — and because within it there is a clear leaf to pull on. Three files sit next to each other and look confusingly similar at first: `messages.py`, `events.py`, and `provider_events.py`. All three define a pile of types, all three show up everywhere, and it isn't obvious why you need three.
