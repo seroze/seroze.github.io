@@ -58,6 +58,14 @@ Duration and timing interact, which is where the stage breakdown above starts to
 
 Regularity may count for as much as total hours. Recent work suggests consistent sleep and wake times predict mortality at least as well as duration does, so seven hours on a fixed schedule beats averaging eight on a chaotic one.
 
+## Fix the room, not just the schedule
+
+All of the above assumes you actually stay asleep, and the two things most likely to stop that are boring and physical rather than behavioural.
+
+If you live anywhere with mosquitos, get a net. It is worth more than any amount of sleep-hygiene advice. A single mosquito doesn't wake you up once — it pulls you out of deep sleep repeatedly across the night, and those arousals are short enough that you won't remember them in the morning. You'll just feel like eight hours didn't work. A net costs almost nothing and removes the problem entirely, which is a better deal than repellent you have to reapply or a machine you have to remember to switch on.
+
+Temperature is the other one. Core body temperature has to drop for sleep to start and stay down for deep sleep to hold, so a warm room fights you all night. This matters more than people in Indian cities like Bangalore or Hyderabad tend to assume — the weather is pleasant enough that the room never feels *hot*, just moderately warm, which is exactly warm enough to keep you in lighter stages without ever waking you enough to blame it. An air cooler is usually plenty in that climate; an AC if the humidity is bad. Cool and slightly under a blanket beats warm and uncovered.
+
 **The practical test is simple. If you wake up without an alarm at roughly the same time and don't crash in the afternoon, you're getting enough. Needing an alarm every single day means you're running a deficit.**
 
 **Sleep doesn't manufacture anything. It just decides how much of what you already have actually gets used.**
