@@ -249,6 +249,48 @@ calculator/
 
 Many large projects — web frameworks, database engines, developer tools — are organized as workspaces, since they naturally split into several reusable crates.
 
+## Modules: Cargo compiles a graph, not a directory
+
+I once spent an evening convinced `cargo test` was broken. I had written a dozen tests across `src/numbers/basenum.rs`, `floatnum.rs` and `realnum.rs`, and every run reported the same thing:
+
+```text
+running 1 test
+test tests::it_works ... ok
+```
+
+One test — the placeholder `cargo new` generates. Nothing I had written was being run, and it turned out nothing I had written was being *compiled* either.
+
+The bad assumption was that Cargo walks `src/` and picks up every `.rs` file it finds. It doesn't. Compilation starts at the crate root — `src/lib.rs` for a library, `src/main.rs` for a binary — and from there the compiler follows `mod` declarations, and only `mod` declarations.
+
+```text
+src/lib.rs
+    │
+    ▼
+numbers/mod.rs
+    │
+    ├── basenum.rs
+    ├── floatnum.rs
+    └── realnum.rs
+```
+
+That tree only exists if somebody writes it down. `lib.rs` needs
+
+```rust
+pub mod numbers;
+```
+
+and `numbers/mod.rs` needs
+
+```rust
+pub mod basenum;
+pub mod floatnum;
+pub mod realnum;
+```
+
+Leave those three lines out and the files sit on disk as inert text. Their code isn't compiled, their `#[cfg(test)]` blocks are never discovered, and `cargo test` faithfully reports the one test that *was* reachable. There's no warning either, because from the compiler's point of view there's nothing to warn about — you never told it those files belong to the crate. A stray `.rs` file that no `mod` points at doesn't even get parsed; you can fill it with nonsense and the build still passes.
+
+Adding the missing declarations fixed it instantly. The model worth internalizing is that the directory layout only tells the compiler *where* to look for a module once you've declared it — it never decides *whether* the module exists. Rust's module system is explicit all the way down, and that same explicitness is what governs compilation, visibility and test discovery.
+
 ## Initializing objects
 
 Rust has no constructors. There's no special method the compiler calls, no `new` keyword, no initializer lists. A struct is built by writing out its fields, and everything else is convention layered on top of that.
@@ -1606,6 +1648,67 @@ numbers              ownership
 
 `&numbers` and `&mut numbers` in a `for` loop are equivalent to `numbers.iter()` and `numbers.iter_mut()` respectively — the reference impls of `IntoIterator` just forward to them. And on the signature side, taking `impl IntoIterator<Item = T>` instead of `Vec<T>` lets callers pass a vec, an array, a range, or any adapter chain, which is why it shows up in the "take the trait, not the type" rule above.
 
+### `copied()` and `cloned()`
+
+Since `iter()` hands you `&T`, you often need to get back to `T`. That's all `copied()` does:
+
+```rust
+let x: u8 = nums.iter().copied().sum();
+```
+
+`nums.iter()` yields `&u8` because it borrows rather than consuming. `copied()` dereferences each item and copies it, so the chain reads `Iterator<Item = &u8>` → `Iterator<Item = u8>` → `sum::<u8>()`, with the sum's type inferred from the `let x: u8` annotation. It's exactly `.map(|&x| x)`, and it requires `T: Copy`. When the element type is only `Clone`, use `cloned()` instead — same idea, potentially expensive.
+
+Two footnotes. You could drop the `copied()` here entirely: the standard library implements `Sum<&u8> for u8`, so summing references works directly. `copied()` earns its place when later adapters need owned values, or simply when you'd rather read `u8` than `&u8` in the chain. And watch the width — `sum::<u8>()` panics in debug and wraps in release once the total passes 255. Nothing widens on your behalf; sum into `u32` if the input might be large.
+
+### Why `Item` is an associated type and not a generic parameter
+
+`Iterator` could plausibly have been declared like this:
+
+```rust
+trait Iterator<T> {
+    fn next(&mut self) -> Option<T>;
+}
+```
+
+It wasn't, and the reason is worth understanding because the same decision comes up in your own traits.
+
+A generic parameter on a trait is an *input*: it's part of the trait's identity, so `Iterator<u8>` and `Iterator<String>` are two different traits as far as coherence is concerned, and one type may implement both.
+
+```rust
+struct Foo;
+impl Iterator<u8> for Foo { /* ... */ }
+impl Iterator<String> for Foo { /* ... */ }
+```
+
+That compiles under the generic formulation — the impls don't overlap. But now `Foo` is an iterator of `u8` *and* an iterator of `String` simultaneously, which isn't what iteration means. A cursor over a sequence produces one kind of thing.
+
+The fallout lands on every piece of generic code that mentions the trait. You'd need a second type parameter just to name the item:
+
+```rust
+fn total<I: Iterator<T>, T>(iter: I) -> T { /* ... */ }
+```
+
+and, for a type with several impls, inference can't pick one — you'd be reaching for a turbofish. Multiply that by every combinator in the library. `map`, `filter`, `zip`, `chain` and `flat_map` would each thread an extra parameter through their signatures and their return types.
+
+An associated type is an *output* instead: it's determined by the implementing type, so `Iterator` can only be implemented once per type and `I::Item` is unambiguous.
+
+```rust
+fn total<I: Iterator>(iter: I) -> I::Item { /* ... */ }
+```
+
+One parameter, no turbofish, and `Item` falls out of inference everywhere.
+
+The rule generalizes cleanly:
+
+| Shape of the relationship | Use | Examples |
+|---|---|---|
+| One impl per type, output follows from the type | Associated type | `Iterator::Item`, `Add::Output`, `Deref::Target` |
+| Several impls per type, keyed on varying input | Generic parameter | `From<T>`, `PartialEq<Rhs>`, `Add<Rhs>` |
+
+`From` is the instructive contrast: you genuinely want `impl From<i32> for MyType` and `impl From<String> for MyType` side by side, so the source type has to be a trait input. `Add` uses both at once — `Rhs` is a parameter (you can add a `Meters` to a `Meters` and to an `f64`), while `Output` is associated (once the operands are fixed, the result type isn't a free choice).
+
+So the associated type isn't just an ergonomic tidy-up for `Iterator`. It's the encoding of a real constraint: a type is an iterator over exactly one thing.
+
 ### `Fn`, `FnMut`, `FnOnce`
 
 Closures aren't a single type. Every closure you write gets its own anonymous struct holding whatever it captured, and the three `Fn*` traits describe *how calling it touches that captured state*. The difference is entirely in how each takes `self`:
@@ -1757,6 +1860,60 @@ where
 ```
 
 A workable heuristic when you're unsure: start at `Fn`, loosen to `FnMut` when the compiler complains that a capture needs mutating, and loosen to `FnOnce` only when the closure genuinely consumes something. Each step outward accepts strictly more callers, so you want to land on the loosest bound your call pattern actually permits.
+
+### Supertraits: naming a pile of bounds
+
+Write a generic numeric function and the bound list gets out of hand fast. Something that needs arithmetic, casting, `Display`, iterator sums and a known maximum ends up dragging ten traits behind every signature. Since a trait can inherit from other traits, you can name that pile once:
+
+```rust
+pub trait Number:
+    Num
+    + FromPrimitive
+    + ToPrimitive
+    + Copy
+    + Display
+    + Debug
+    + Sum
+    + Product
+    + AddAssign
+    + SubAssign
+    + MulAssign
+    + DivAssign
+    + Bounded
+    + NumCast
+{}
+```
+
+The empty body is the point — `Number` adds no methods of its own. Everything after the colon is a **supertrait**: to implement `Number` a type must already implement all of them, and in return every generic function that writes `T: Number` gets the whole set.
+
+Most of those come from the `num` crate. `Num` covers the arithmetic operators, `FromPrimitive` / `ToPrimitive` / `NumCast` handle generic numeric conversion, and `Bounded` supplies `min_value()` and `max_value()`. `Sum` and `Product` are from `std::iter` — they're what make `.sum()` and `.product()` work on an iterator of `T`.
+
+The payoff is that signatures go back to being readable:
+
+```rust
+fn mean<T: Number>(xs: &[T]) -> T {
+    xs.iter().copied().sum::<T>() / T::from_usize(xs.len()).unwrap()
+}
+```
+
+There are two ways to hand out the impls. Explicitly, one line per type:
+
+```rust
+impl Number for i32 {}
+impl Number for f64 {}
+// ...
+```
+
+or with a blanket impl covering anything that qualifies:
+
+```rust
+impl<T> Number for T
+where
+    T: Num + FromPrimitive + ToPrimitive + Copy + /* ...the rest... */
+{}
+```
+
+The blanket version is less typing and picks up user-defined numeric types for free — someone's fixed-point or big-integer type becomes a `Number` the moment it satisfies the bounds. The cost is that you've given up control of the membership: every qualifying type is a `Number` whether you meant it or not, and because the blanket impl already covers them, nobody — including you — can write a manual `impl Number for MyType` afterwards without a coherence error. Listing the primitives by hand keeps the set deliberate and closed, which is usually what a library wants.
 
 ## Interior mutability
 
