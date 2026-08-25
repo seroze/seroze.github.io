@@ -274,6 +274,50 @@ No large copy happens at all. This optimisation is only possible because the
 language can tell the difference between objects that should be preserved and
 objects that are expendable.
 
+## The same idea in a knapsack loop
+
+Competitive programming has a standard shape for 0/1 knapsack that carries two
+DP arrays, and it's a good place to watch this play out on something other than
+a toy vector.
+
+```cpp
+vector<long long> ndp = dp;
+
+for (...) {
+    // update ndp using values from dp
+}
+
+dp.swap(ndp);
+```
+
+At a glance `ndp` looks like it might just be another name for `dp`, the way a
+reference would be. It isn't. That first line is copy-initialisation: it
+allocates a fresh buffer and copies every element, so it costs O(X) for X DP
+states. Two independent arrays now exist, which is the entire point. Every
+transition reads from the old `dp` and writes into `ndp`, so nothing written
+during a pass can be read back during the same pass, and each item gets used at
+most once.
+
+Then the last line:
+
+```cpp
+dp.swap(ndp);
+```
+
+`swap` copies nothing. A vector is really a handful of pointers into the heap —
+begin, end, capacity — and swapping two vectors exchanges those pointers. O(1),
+whatever X is. Write `dp = ndp;` instead and you get copy assignment: another
+full O(X) pass, possibly with an allocation, to produce a copy of something you
+were about to discard anyway. `dp = std::move(ndp);` is also O(1) and says the
+same thing in the vocabulary of this post; `swap` is the older idiom and has the
+small advantage of leaving `ndp` holding the previous buffer, whose capacity gets
+reused on the next iteration's copy.
+
+So one iteration costs O(X) to copy, O(X) for the transitions, and O(1) to swap.
+The copy is the real price, and it's the price of keeping the two layers
+separate. The swap at the end is free — which is exactly why the pattern shows
+up all over 0/1 knapsack and its relatives.
+
 ## Why two categories weren't enough
 
 Look closely at `std::move(x)` and ask the two questions.
