@@ -177,5 +177,16 @@ random trees are slower purely because the distance array gets accessed out of o
 I also tried the usual rewrite — CSR adjacency via a degree prefix sum into one flat array, plus a
 preallocated list as the queue instead of `deque` — expecting the usual large speedup. It came out
 the same, $$1.0$$s and $$2.1$$s. `deque.popleft` and list-of-lists adjacency simply weren't the
-bottleneck; the per-node Python overhead is. If this TLEs, the fix is PyPy or C++, not micro-tuning
-the BFS.
+bottleneck; the per-node Python overhead is.
+
+And it did TLE on submission. Not by a subtle margin either — the algorithm is linear and correct,
+and the judge still rejected it, because at $$\sum N = 10^6$$ the constant factor of interpreting a
+BFS inner loop three times over is the whole budget. Transcribing the same solution to C++ — same
+three passes, same bucketing sweep, same formula, no algorithmic change of any kind — passed
+comfortably.
+
+Which is the useful thing to take away, and slightly annoying to admit: the micro-optimisation
+instinct was pointing at the wrong layer the entire time. There was no Python rewrite that was going
+to save this. The gap between CPython and C++ on a tight pointer-chasing loop is roughly two orders
+of magnitude, and no amount of flattening the adjacency list closes that. Once the profile says the
+per-node overhead *is* the interpreter, the only moves left are PyPy or a different language.
