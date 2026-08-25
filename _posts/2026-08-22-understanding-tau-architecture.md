@@ -402,3 +402,115 @@ So you get a rough hierarchy of timescales:
 | `provider_events.py` | `AssistantMessageEvent` (12 types) | how is one message being assembled | ephemeral |
 
 The detail that made it click for me was the import graph. Both event files import `messages.py`, and `messages.py` imports neither of them. Every event carries a message as its payload. That's the giveaway: messages are the nouns, and events are just wrappers announcing that something happened to a noun. Once you read it that way the duplication stops looking like duplication — there is exactly one representation of conversation content, and two different granularities of narration on top of it.
+
+## A taxonomy of messages.py
+
+Having decided `messages.py` is the leaf worth pulling on, I read the whole file. It's about 280 lines and defines a dozen or so models, which sounds like a lot until you notice they aren't a dozen unrelated things. There are exactly two kinds of model in there, and keeping them straight is most of the file's design:
+
+- **Content blocks** — the inside of a message. Discriminated by a `type` field.
+- **Transcript messages** — the items in the history list. Discriminated by a `role` field.
+
+Everything else is scaffolding, metering, or a satellite hanging off one specific message. Once you have that split the file reads in one pass.
+
+### The scaffolding
+
+Three things at the top that nothing else in the file will mention again, because they're doing their work invisibly.
+
+`_to_camel` turns `tool_call_id` into `toolCallId`. Tau's wire format is camelCase — it's compatible with Pi's protocol, which is JavaScript-shaped — while the Python API is snake_case, as it should be. `current_timestamp_ms` returns Unix milliseconds and is used as the `default_factory` on every message.
+
+Then `WireModel`, the base class everything inherits. It's four lines of `ConfigDict` and it's the one class to understand first:
+
+```python
+class WireModel(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        validate_by_name=True,
+        validate_by_alias=True,
+        serialize_by_alias=True,
+        alias_generator=_to_camel,
+    )
+```
+
+`extra="forbid"` means an unknown JSON key is an error rather than something silently dropped — if a provider starts sending a field Tau doesn't model, you find out immediately instead of losing data quietly. The two `validate_by_*` flags mean both spellings are accepted on input, so you can construct from Python with `tool_call_id=` or parse a payload with `toolCallId=` and both work. `serialize_by_alias` means output is always camelCase. That's why no other class in the file has to think about aliases at all.
+
+### Metering
+
+Two models, assistant-only. `UsageCost` holds USD floats — `input`, `output`, `cache_read`, `cache_write`, `total`. `Usage` holds token counts in the same shape, plus `cache_write_1h`, `reasoning`, `total_tokens`, and a nested `cost: UsageCost`.
+
+The parallel structure is deliberate: same field names, tokens in one and dollars in the other. `cache_write_1h` being separate from `cache_write` is the extended-TTL cache write priced differently from the standard one, which connects back to the caching section above — the accounting model has to distinguish them because the biller does.
+
+### Content blocks
+
+Four of them, discriminated by `type`.
+
+| class | `type` | payload | notes |
+|---|---|---|---|
+| `TextContent` | `"text"` | `text` | `text_signature` carries provider-side signing |
+| `ThinkingContent` | `"thinking"` | `thinking` | `thinking_signature`, plus `redacted: bool` for encrypted reasoning |
+| `ImageContent` | `"image"` | `data`, `mime_type` | `data` is base64 |
+| `ToolCall` | `"toolCall"` | `id`, `name`, `arguments` | `thought_signature` is the Gemini-flavoured equivalent |
+
+Then three union aliases, and these are the actual type-level contract of the file:
+
+```python
+type UserContent = str | list[TextContent | ImageContent]
+type AssistantContent = TextContent | ThinkingContent | ToolCall
+type ToolResultContent = TextContent | ImageContent
+```
+
+Read them as rules about which blocks are legal where. A user can send text and images but never a thinking block or a tool call. An assistant can produce text, thinking and tool calls but not images. A tool result can come back as text or an image, but it can't contain reasoning and it can't nest another tool call. None of that is enforced by a runtime check anywhere — it's enforced by the types, once, and then every message that references these aliases gets it for free.
+
+The asymmetry worth noticing is that `UserContent` allows a bare `str` and the other two don't. That comes back in a moment.
+
+### Transcript messages
+
+Seven classes, discriminated by `role`, and they split into three tiers by how far they travel.
+
+**Tier A — they cross the provider boundary.** These become turns in an actual API request.
+
+`UserMessage` is the simplest model in the file: a `role`, a `content: UserContent`, a `timestamp`. That's it.
+
+`AssistantMessage` is the heavyweight, and most of its weight is a distinction I liked: it records both what was asked for and what came back. `api` / `provider` / `model` are what the request specified; `response_model` / `response_provider` / `response_id` are what the provider actually says it served. Those diverge more often than you'd hope — an alias resolving to a dated snapshot, a router silently falling back — and if you only store the requested model your transcripts lie to you later. On top of that it carries `usage`, a `stop_reason`, an `error_message`, and a list of `diagnostics`.
+
+`ToolResultMessage` carries `tool_call_id`, which pairs back to `ToolCall.id` and is the only thing linking a result to its request, plus `tool_name`, an `is_error` flag, free-form `details`, and `added_tool_names` for tools that register more tools when they run.
+
+**Tier B — local to the session.** These never go to a provider as-is; they're converted first, by `message_to_user`.
+
+`BashExecutionMessage` is for when the user ran a shell command in the REPL themselves rather than the model calling a tool. It holds `command`, `output`, `exit_code`, and flags for `cancelled` and `truncated`, plus a `full_output_path` when the output got spilled to a file. The interesting field is `exclude_from_context`: the message is in the transcript and shown on screen, but can be marked as not going to the model. That's the whole reason this tier exists.
+
+`CustomMessage` is the escape hatch for host-application messages — status lines, notices, whatever the app on top wants in the scrollback. `custom_type` is a free string the host defines, and `display: bool` controls whether it's shown at all.
+
+**Tier C — history rewriting.** Produced by the harness *about* the transcript rather than by anyone in the conversation.
+
+`BranchSummaryMessage` has `summary` and `from_id`, and collapses an abandoned branch into a sentence. `CompactionSummaryMessage` has `summary` and `tokens_before`, and replaces trimmed history when the context window fills up. Both are the same idea: a summary string standing in for messages that are gone.
+
+Three small satellites hang off `AssistantMessage` and nothing else. `AssistantDiagnosticError` is an exception rendered as data — `name`, `message`, `stack`, `code`. `AssistantMessageDiagnostic` wraps one of those with a `type` and a timestamp. And `StopReason` is a plain literal alias:
+
+```python
+StopReason = Literal["stop", "length", "toolUse", "error", "aborted"]
+```
+
+Finally the whole thing gets tied together:
+
+```python
+type AgentMessage = Annotated[
+    UserMessage | AssistantMessage | ToolResultMessage
+    | BashExecutionMessage | CustomMessage
+    | BranchSummaryMessage | CompactionSummaryMessage,
+    Field(discriminator="role"),
+]
+```
+
+That `discriminator="role"` is what makes deserialising a session file cheap and safe — pydantic reads one field and knows exactly which model to build, instead of trying all seven and taking whichever doesn't explode.
+
+### Three cross-cutting things
+
+A few patterns run through the file rather than living in any one class, and they're the parts I'd actually steal.
+
+**String content is construction sugar, never a second representation.** `AssistantMessage` and `ToolResultMessage` each have a `@model_validator(mode="before")` that accepts a plain string for `content` and promotes it to `[TextContent(text=...)]`. The docstring is explicit that this is for Python construction and tests only — the stored model and the serialised protocol are always block-based. This is the right way to have a convenience shorthand: normalise it at the boundary so nothing downstream ever has to ask "is this a string or a list this time". `UserMessage` doesn't need the validator, because there `str` is genuinely part of the type.
+
+**`.text` is always computed, never stored.** `UserMessage`, `AssistantMessage`, `ToolResultMessage` and `CustomMessage` all expose a `text` property that walks the blocks and joins them; `AssistantMessage` adds `thinking_text` and `tool_calls` the same way. There's no cached flat string anywhere that could drift out of sync with the blocks.
+
+**Timestamps are on every message and on no content block.** Ordering is a transcript concern, not a content concern. A block doesn't get to have an opinion about when it happened — only the message it lives in does.
+
+The one thing that shows up everywhere and is pure tax is signatures: `text_signature`, `thinking_signature`, `thought_signature`. Three different fields on three different blocks, all doing the same job of carrying an opaque provider-issued token that has to be handed back verbatim on the next turn. That's the actual price of being provider-neutral over providers that cryptographically sign their own output — you can unify the shape of everything except the parts each vendor insists on making unique.
