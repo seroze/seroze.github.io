@@ -349,6 +349,38 @@ The second is that `provider.generate` returns a finished `AssistantMessage`. It
 
 Hold onto that. `Message` here is `AgentMessage` there. The two event types tau has and this file doesn't are precisely the two things this file gave up: narration of the loop, and narration of a message being assembled.
 
+One more thing about the tool half of that loop, since it's the part people
+get wrong when they first build it. Every request carries the full schema of
+every registered tool — not a handle, not a diff against last turn, the whole
+`ToolRegistry` serialised out again, on turn one and on turn forty. The
+provider keeps no memory of what you sent last time, so the request is the
+entire state.
+
+That sounds wasteful and mostly isn't. A tool schema is a name, a sentence of
+description, and a small JSON Schema for its arguments — call it a hundred to a
+few hundred tokens each. A dozen tools is a couple of thousand tokens of
+overhead per request, which is real but small next to the transcript and tiny
+next to the file contents a coding agent ends up pasting in. You pay it every
+turn and barely notice.
+
+What keeps it cheap is where you put it. The tool schemas go at the very front
+of the request, ahead of anything that varies, because prefix caching matches
+on exact prefixes: the provider reuses whatever leading bytes it has already
+seen, and the first byte that differs invalidates everything after it. Tools
+are the most stable thing in the whole payload, so leading with them means that
+block is cached once and read back at a fraction of the cost for the rest of
+the session. Put them after something that changes and you've given that up for
+nothing.
+
+Which is also the rule I'd carve into the wall: never put dynamic content in a
+tool schema. No timestamp in the description, no current working directory
+baked into an argument's docstring, no list of the files that happen to exist
+right now. Each of those rewrites the cache prefix on every single request and
+quietly turns your cheapest block into your most expensive one. A tool schema
+describes what the tool *can* do, which doesn't change mid-session. Anything
+that does change belongs in a message — the system prompt if it's per-session,
+a user or tool message if it's per-turn.
+
 ## tau_agent: messages are nouns, events are announcements
 
 I started with `tau_agent` because it's the piece everything user-facing is built around — `tau_coding` is essentially a shell over it — and because within it there is a clear leaf to pull on. Three files sit next to each other and look confusingly similar at first: `messages.py`, `events.py`, and `provider_events.py`. All three define a pile of types, all three show up everywhere, and it isn't obvious why you need three.
