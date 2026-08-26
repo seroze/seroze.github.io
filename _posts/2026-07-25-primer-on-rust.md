@@ -813,6 +813,91 @@ String::new()   // :: create a String
     .len();     // .  operate on the result
 ```
 
+## Turbofish: `::<>` vs. a type annotation
+
+There are two places you can pin down a generic parameter, and I forget which one is idiomatic every single time. Take a struct:
+
+```rust
+struct Point<T> {
+    x: T,
+    y: T,
+}
+```
+
+Both of these give you a `Point<f64>`:
+
+```rust
+let p: Point<f64> = Point { x: 3.0, y: 4.0 };   // annotation on the binding
+let p = Point::<f64> { x: 3.0, y: 4.0 };        // turbofish on the constructor
+```
+
+The first annotates `p` and lets the compiler infer the generic on the right from that. The second — `::<...>`, the **turbofish** — specifies the generic argument at the construction site, and `p`'s type follows from it.
+
+For a `let` binding, prefer the annotation. Turbofish exists to solve a different problem: disambiguating a generic when there's no left-hand side to infer from. `Vec::<i32>::new()` standing alone, or mid-chain calls like `"42".parse::<i32>()`, where the value never gets bound to a name you could annotate. If you already have a `let`, you already have a natural slot for the type, and the turbofish is redundant noise.
+
+It also scales better once the generics get nested. Compare:
+
+```rust
+let cache: HashMap<String, Vec<Point<f64>>> = HashMap::new();   // reads like a signature
+let cache = HashMap::<String, Vec<Point<f64>>>::new();          // ::< and >:: pile up
+```
+
+The annotation front-loads the type so you can scan it top-to-bottom; the turbofish version buries it inside a call expression between two pairs of colons.
+
+Where turbofish really is the only option is a chain that ends in `collect()`, since `collect` is generic over its *return* type and there's nothing else to infer from:
+
+```rust
+let nums = "1,2,3"
+    .split(',')
+    .map(str::parse::<i32>)
+    .collect::<Result<Vec<_>, _>>()?;
+```
+
+Rule of thumb: **binding to a variable, annotate the variable; stuck mid-expression, reach for the turbofish.**
+
+One aside on that `Point<T>`, since it bites once: both fields share the same parameter, so `Point { x: 3.0, y: 4 }` doesn't compile — `4` infers as `i32` while `3.0` infers as `f64`. Mixed types need two parameters, `struct Point<T, U> { x: T, y: U }`.
+
+## `PhantomData`: a type parameter that carries no data
+
+Sometimes you want a generic parameter purely as a *tag* — something the type system can distinguish on, with no runtime value behind it. Rust won't let you declare `struct Distance<T> { value: f64 }` directly; every type parameter has to be used by some field, or the compiler rejects it as unconstrained. `std::marker::PhantomData<T>` is the zero-sized placeholder that satisfies that requirement.
+
+The unit-of-measure example is the one that makes it click:
+
+```rust
+use std::marker::PhantomData;
+
+struct Meters;
+struct Feet;
+
+struct Distance<T> {
+    value: f64,
+    unit: PhantomData<T>,
+}
+
+fn main() {
+    let dist_m: Distance<Meters> = Distance {
+        value: 10.0,
+        unit: PhantomData,
+    };
+
+    let dist_f: Distance<Feet> = Distance {
+        value: 3.0,
+        unit: PhantomData,
+    };
+
+    println!("Meters: {}", dist_m.value);
+    println!("Feet: {}", dist_f.value);
+}
+```
+
+`Meters` and `Feet` are empty structs — they hold nothing, exist only as names, and are never instantiated. `PhantomData` is likewise zero-sized, so `Distance<Meters>` occupies exactly the same eight bytes as a bare `f64`. Nothing here costs anything at runtime.
+
+What you buy with it is that `Distance<Meters>` and `Distance<Feet>` are *different types*. A function that takes `Distance<Meters>` will reject a `Distance<Feet>` at compile time, and adding the two together won't typecheck unless you write a conversion. The mistake that cost NASA an orbiter becomes a compiler error.
+
+The same trick shows up wherever you want states or roles enforced statically — `Connection<Open>` vs. `Connection<Closed>`, `Id<User>` vs. `Id<Order>` over the same underlying `u64`. The pattern is always: an empty marker struct for each tag, a `PhantomData<T>` field to make the parameter legal, and the type checker does the rest.
+
+`PhantomData` has a second job in unsafe code — telling the compiler about ownership and variance it can't otherwise see, e.g. `PhantomData<T>` on a raw-pointer struct so the drop checker knows a `T` is logically owned. That matters when you're writing your own collection; for the tagging use above, the zero-sized-marker reading is all you need.
+
 ## Traits
 
 A trait is a set of behaviours a type can implement — closest to an interface in Java or a concept in C++. The part that matters day to day is **trait bounds**: when a generic function writes `T: SomeTrait`, it's saying "this only works for types that can do this particular thing."
