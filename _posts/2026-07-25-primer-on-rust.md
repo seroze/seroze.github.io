@@ -1794,6 +1794,105 @@ The rule generalizes cleanly:
 
 So the associated type isn't just an ergonomic tidy-up for `Iterator`. It's the encoding of a real constraint: a type is an iterator over exactly one thing.
 
+### Operator overloading and the `Add<Output = T>` bound
+
+Overloading `+` for your own type means implementing `std::ops::Add`. For a concrete type it's unremarkable, but doing it generically is where a bound most people write wrong for the first time or two shows up.
+
+The goal is to add two `Point<T>` values componentwise, for any `T` that can be added:
+
+```rust
+use std::ops::Add;
+
+struct Point<T> {
+    x: T,
+    y: T,
+}
+
+impl<T> Add for Point<T> {
+    type Output = Point<T>;
+
+    fn add(self, rhs: Point<T>) -> Point<T> {
+        Point { x: self.x + rhs.x, y: self.y + rhs.y }
+    }
+}
+```
+
+That doesn't compile. `T` is completely unconstrained, so `self.x + rhs.x` is asking a type that promised nothing to support `+`. The obvious fix is to say it supports addition:
+
+```rust
+impl<T: Add> Add for Point<T> {
+```
+
+Still no. `T: Add` says `T + T` is a valid expression, but the trait's signature is `fn add(self, rhs: Rhs) -> Self::Output` — the result is `T::Output`, which the bound leaves completely open. It could be `T`, it could be anything. The field you're assigning into is a `T`, so the compiler has no reason to believe those match.
+
+The bound that works pins down the output too:
+
+```rust
+impl<T: Add<Output = T>> Add for Point<T> {
+    type Output = Point<T>;
+
+    fn add(self, rhs: Point<T>) -> Point<T> {
+        Point { x: self.x + rhs.x, y: self.y + rhs.y }
+    }
+}
+```
+
+`T: Add<Output = T>` is two promises in one: `T + T` typechecks, *and* what comes back is a `T`. That's exactly what `Point { x: self.x + rhs.x, ... }` needs.
+
+The arc in one table:
+
+| Bound | Problem |
+|---|---|
+| `impl<T>` | `T` might not support `+` at all |
+| `impl<T: Add>` | `T` supports `+`, but the result type is unconstrained — it might not be `T` |
+| `impl<T: Add<Output = T>>` | `T` supports `+` and the result is guaranteed to be `T`, matching the field type |
+
+This is why associated-type bounds — the `Trait<Assoc = Concrete>` shape — turn up constantly in generic numeric and operator code. Naming the trait is usually not enough; you also have to pin down what it produces. The same pattern reads `I: Iterator<Item = u32>` when you need an iterator of a specific element type, or `T: Deref<Target = str>` for anything that derefs to a string slice.
+
+### Default type parameters and `Rhs = Self`
+
+Here's the full declaration of `Add`:
+
+```rust
+trait Add<Rhs = Self> {
+    type Output;
+    fn add(self, rhs: Rhs) -> Self::Output;
+}
+```
+
+Two things in that line are worth unpacking.
+
+`Rhs = Self` is a **default type parameter**. Omit the argument and `Rhs` becomes `Self`, the implementing type — which is why `impl Add for Point<T>` (with no `<...>` after `Add`) gets `rhs: Point<T>` for free. The default encodes the common case: you usually add a thing to another thing of the same kind. Overriding it is how you get the exceptional case, like scaling a point by a scalar:
+
+```rust
+impl Mul<f64> for Point<f64> {
+    type Output = Point<f64>;
+
+    fn mul(self, scalar: f64) -> Point<f64> {
+        Point { x: self.x * scalar, y: self.y * scalar }
+    }
+}
+```
+
+`Self::Output` is qualified because `Output` is a member of the trait, not a free-standing name in scope. Writing bare `Output` would be like writing `x` where you meant `self.x`. The qualification says "the `Output` belonging to whatever type is implementing this."
+
+You can use `Self` as a default in your own traits — a default value can be any type expression that makes sense there: a concrete type, another parameter in scope, or `Self`:
+
+```rust
+trait Combine<Other = Self> {
+    fn combine(self, other: Other) -> Self;
+}
+
+// Other defaults to Self = Point<T>
+impl<T: Add<Output = T>> Combine for Point<T> {
+    fn combine(self, other: Point<T>) -> Self {
+        Point { x: self.x + other.x, y: self.y + other.y }
+    }
+}
+```
+
+Which brings the two mechanisms in `Add` into one picture. `Rhs` is a generic parameter because a type may legitimately be addable to several different things, and each needs its own impl — `Add<Point>` and `Add<f64>` for the same `Point` are distinct traits and don't overlap. `Output` is an associated type because once both operands are fixed, the result type isn't a free choice any more; there's exactly one right answer per impl. Multiplicity where you want choice, a single fixed value where you don't — the reasoning is the same as [`Iterator::Item`'s](#why-item-is-an-associated-type-and-not-a-generic-parameter), applied to both slots of one trait.
+
 ### `Fn`, `FnMut`, `FnOnce`
 
 Closures aren't a single type. Every closure you write gets its own anonymous struct holding whatever it captured, and the three `Fn*` traits describe *how calling it touches that captured state*. The difference is entirely in how each takes `self`:
