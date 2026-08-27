@@ -4,7 +4,7 @@ title: About
 permalink: /about/
 ---
 
-This is a dev log — notes on whatever I'm building, breaking or reading about on a given day. These days that's mostly agents and mechanistic interpretability, plus the networking, async and database libraries underneath them, with some performance engineering and design engineering alongside.
+This is a dev log — notes on whatever I'm building, breaking or reading about on a given day. These days that's mostly agents, mechanistic interpretability, performance engineering and programming languages.
 
 It's a log, not a publication. A lot of what's here started as a conversation with ChatGPT or Claude — I ask questions until something clicks, then summarize the useful part so I can find it again. Most posts are quick captures for my future self and I don't spend much time polishing them. The exception is when a post is trying to teach a concept — those I actually sit with and rewrite until the explanation holds up.
 
