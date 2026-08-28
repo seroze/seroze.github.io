@@ -1012,6 +1012,27 @@ from fractions import Fraction          # exact rationals, when you need them
 
 If you want truncation, be explicit: `int(-3 / 2)` is `-1`, `math.fmod(-3, 2)` is `-1.0`, and `math.trunc` truncates. `divmod(a, b)` gives you the floor-consistent pair in one call.
 
+Walking a run of negatives past a single modulus makes the pattern obvious — the result cycles rather than going negative:
+
+```python
+-1 % 3      # 2
+-2 % 3      # 1
+-3 % 3      # 0
+-4 % 3      # 2
+```
+
+The payoff shows up whenever you need to *solve* for a residue rather than just check one. Say you want three numbers whose sum is divisible by 3 and you've already fixed the first two — the third isn't a choice any more, it's forced:
+
+```python
+k = (-i - j) % 3
+```
+
+With `i = 2` and `j = 2` that's `-4 % 3`, which Python evaluates to `2`, and
+
+$$2 + 2 + 2 = 6 \equiv 0 \pmod 3$$
+
+exactly as needed. There's no `if k < 0` afterwards and no `+ 3` fudge factor; the sign rule already landed the answer in `[0, 3)`. C++ gives `-1` for that same expression, which is why C-family code writes `((-i - j) % 3 + 3) % 3` or `(3 - (i + j) % 3) % 3` instead. That trailing `+ m) % m` is the tell that you're reading modular arithmetic written for a language that truncates.
+
 ## 20 GB of CSV: pandas, NumPy, or Polars?
 
 Not NumPy — it's a homogeneous n-dimensional array library, so a CSV with mixed dtypes and string columns isn't its shape. It's the layer underneath, not the tool for the job.
