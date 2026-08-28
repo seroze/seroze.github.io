@@ -291,6 +291,51 @@ Leave those three lines out and the files sit on disk as inert text. Their code 
 
 Adding the missing declarations fixed it instantly. The model worth internalizing is that the directory layout only tells the compiler *where* to look for a module once you've declared it — it never decides *whether* the module exists. Rust's module system is explicit all the way down, and that same explicitness is what governs compilation, visibility and test discovery.
 
+### Where a path starts: `crate::`, `super::`, `self::`
+
+Declaring the modules is half of it. The other half is saying where a path
+*begins*, and there are three prefixes for that:
+
+- **`crate::`** — start from the crate root (`src/lib.rs` for a library,
+  `src/main.rs` for a binary)
+- **`super::`** — start from the parent module, one level up from the current
+  file
+- **`self::`** — start from the current module
+
+Take the tree above and say `floatnum.rs` needs a helper that lives next door
+in `basenum.rs`. These two lines reach the same function:
+
+```rust
+// in src/numbers/floatnum.rs
+use crate::numbers::basenum::round_half_up;  // down from the root
+use super::basenum::round_half_up;           // up one level, then across
+```
+
+`self::` refers to the module you're already in, so it's almost always
+redundant — a bare `basenum::round_half_up(..)` inside `numbers/mod.rs` means
+exactly the same as `self::basenum::round_half_up(..)`. It's worth writing when
+the leading name would otherwise be ambiguous, most often because you've
+imported something with the same name from another crate.
+
+```rust
+// in src/numbers/mod.rs
+pub mod basenum;
+
+pub fn round(x: f64) -> f64 {
+    self::basenum::round_half_up(x)   // unambiguously *my* basenum
+}
+```
+
+A path with none of these prefixes is read as a crate name — which is why
+`use std::io;` works without ceremony and `use numbers::basenum;` doesn't,
+unless there happens to be a dependency called `numbers`. (This is the 2018
+edition rule; older code used a leading `::` for the same job.)
+
+Which to prefer is mostly about what you expect to change. `crate::` paths read
+identically from every file in the crate and survive moving a file to a
+different depth; `super::` is shorter and says "my sibling", which is often what
+you actually mean, but it goes stale the moment the file moves.
+
 ## Initializing objects
 
 Rust has no constructors. There's no special method the compiler calls, no `new` keyword, no initializer lists. A struct is built by writing out its fields, and everything else is convention layered on top of that.
