@@ -663,7 +663,53 @@ The detail worth knowing cold: **if `__exit__` returns a truthy value, the excep
 
 `__exit__` runs whether the block completes normally, raises, or exits via `return`/`break`/`continue` — that's the whole point, and it's why `with` is preferable to `try/finally` written by hand. (It does *not* survive `os._exit()` or a hard crash.)
 
-Writing one is usually easiest with `contextlib`:
+### Two ways to write one
+
+Anything carrying those two methods is a context manager, so the direct route is a class:
+
+```python
+class MyContext:
+    def __enter__(self):
+        print("enter")
+
+    def __exit__(self, exc_type, exc, tb):
+        print("exit")
+
+my_context = MyContext()
+
+with my_context:
+    print("do something")        # enter / do something / exit
+```
+
+`contextlib.contextmanager` builds the same thing out of a generator function with exactly one `yield` — everything before the `yield` is `__enter__`, everything after it is `__exit__`:
+
+```python
+from contextlib import contextmanager
+
+@contextmanager
+def my_context():
+    print("enter")
+    yield
+    print("exit")
+
+with my_context():               # note the call
+    print("do something")        # enter / do something / exit
+```
+
+Watch the call site, which is the easy mistake: the class instance above is used bare (`with my_context:`), while the decorated function has to be *invoked* (`with my_context():`). The decorator turns the function into a factory that mints a fresh manager per call, which is also why the generator form is single-use: the generator is exhausted after one `with`, so holding onto the object and entering it twice fails the second time — with a fairly baffling `AttributeError: '_GeneratorContextManager' object has no attribute 'args'` on CPython 3.12, rather than anything that names the real problem. Call the factory again instead.
+
+These aren't two separate mechanisms. The generator form is sugar over the class one: calling the decorated function hands back an object implementing the same two methods, which drive the generator forward.
+
+```python
+>>> type(my_context())
+<class 'contextlib._GeneratorContextManager'>
+```
+
+Both arrived together in Python 2.5 — the decorator was specified in PEP 343 alongside `with` itself, not bolted on later. And "exactly one `yield`" is enforced rather than conventional; a generator that yields twice raises `RuntimeError: generator didn't stop` when the block exits.
+
+Which to reach for: the generator form for plain setup-then-teardown around a block, which covers most cases and reads better. The class form when the manager holds state that outlives a single `with`, needs to be reusable or re-entrant, or when `__exit__` has a real decision to make about the exception — inspecting `exc_type` and returning truthy to suppress is far clearer as a method than as `try/except` wrapped around a `yield`.
+
+A realistic generator-form example, timing a block:
 
 ```python
 from contextlib import contextmanager
@@ -677,7 +723,7 @@ def timer(label):
         print(label, time.perf_counter() - start)
 ```
 
-The `try/finally` matters: without it, an exception in the body propagates out of the `yield` and the teardown never runs. And note `contextlib.contextmanager` produces a *single-use* context manager — the generator is exhausted after one `with`.
+The `try/finally` matters: without it, an exception in the body propagates out of the `yield` and the teardown never runs.
 
 ## Decorators
 
