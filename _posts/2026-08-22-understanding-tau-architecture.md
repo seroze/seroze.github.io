@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "Understanding Tau's Architecture"
+title: "[Python] Understanding Tau’s Architecture"
 date: 2026-08-22 00:00:00 +0530
 categories: llm
 tags: [coding_agents, agents, llm, open_source, huggingface, python]

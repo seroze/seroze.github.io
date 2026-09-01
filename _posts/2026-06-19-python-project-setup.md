@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "Setting Up Python Projects — uv, pip, and pytest"
+title: "[Python] Setting Up Projects — uv, pip, and pytest"
 date: 2026-06-19 00:00:00 +0530
 categories: python
 tags: [python, uv, pip, pytest, project_setup]
