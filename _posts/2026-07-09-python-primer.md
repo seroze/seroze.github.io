@@ -941,6 +941,186 @@ class A:
 
 `__delattr__` pairs with `object.__delattr__` the same way. Worth keeping straight that `__getattr__` — no `ute` — is *not* affected, because it only runs as a fallback after normal lookup has already failed. Reading `self.x` inside `__getattr__` is fine, as long as `x` actually exists.
 
+## Dunder gotchas
+
+The `__setattr__` traps above aren't special to `__setattr__` — most of them are instances of a few general rules about how Python calls special methods. These are the ones worth having in your head.
+
+### Special methods are looked up on the *type*, not the instance
+
+This is the rule that explains half of the others. When Python executes `len(obj)`, it does not do `obj.__len__()`. It looks up `__len__` on `type(obj)` and calls it with `obj`:
+
+```python
+class A: pass
+
+a = A()
+a.__len__ = lambda: 5
+
+a.__len__()      # 5
+len(a)           # TypeError: object of type 'A' has no len()
+```
+
+Setting a dunder on an instance does nothing for the operator that's supposed to use it. Assigning to `a.__len__` puts an entry in the instance dict, and implicit lookup never consults the instance dict.
+
+It also skips `__getattribute__` entirely, which is a genuine surprise given the previous section:
+
+```python
+class B:
+    def __getattribute__(self, name):
+        print("intercepted", name)
+        return object.__getattribute__(self, name)
+    def __len__(self):
+        return 3
+
+len(B())         # 3 — and "intercepted" is never printed
+```
+
+So a proxy class that forwards everything through `__getattribute__` will *not* forward `len()`, `[]`, `+`, `with`, or `bool()`. Those have to be defined on the proxy's class explicitly, which is exactly why libraries that build proxies generate all the dunders up front instead of catching them dynamically.
+
+The corollary for monkeypatching: to change an object's behaviour under an operator you have to patch the class, not the object.
+
+### The recursion traps generalise
+
+`__setattr__`, `__getattribute__` and `__delattr__` all re-enter themselves if you use ordinary attribute syntax inside them — [covered above](#bypassing-a-custom-setattr-with-objectsetattr), with `object.__setattr__` and friends as the way out. `__repr__` has the same shape for a different reason:
+
+```python
+class R:
+    def __repr__(self):
+        return f"R({self})"      # RecursionError
+```
+
+Interpolating `self` calls `__str__`, which falls back to `__repr__`, which interpolates `self` again. Using `{self!r}` doesn't help — it's the same loop, just more directly. Format the *fields*, never the object: `f"R({self.x!r})"`.
+
+### Return types are checked, and the errors are specific
+
+Python validates what these hand back, so a wrong return is a runtime error rather than silent nonsense:
+
+```python
+def __len__(self): return "5"    # TypeError: 'str' object cannot be interpreted as an integer
+def __len__(self): return 2.0    # TypeError: 'float' object cannot be interpreted as an integer
+def __len__(self): return -1     # ValueError: __len__() should return >= 0
+def __len__(self): return 2**63  # OverflowError: cannot fit 'int' into an index-sized integer
+def __bool__(self): return 1     # TypeError: __bool__ should return bool, returned int
+```
+
+`__bool__` insisting on an actual `bool` rather than anything truthy is the one that catches people, since returning `1` or a non-empty string is idiomatic everywhere else in Python.
+
+### `__bool__` falls back to `__len__`
+
+If a class defines no `__bool__`, truthiness is decided by `__len__`, and only if neither exists is the object unconditionally truthy:
+
+```python
+class Empty:
+    def __len__(self):
+        return 0
+
+bool(Empty())        # False
+if Empty(): ...      # never runs
+```
+
+That's the correct and intended behaviour for containers — an empty one should be falsy. It's a trap when `__len__` means something other than "how full am I". A class where `__len__` returns a duration, a count of errors, or a version number will silently become falsy whenever that number hits zero, and `if obj:` checks scattered around the codebase will start taking the wrong branch. If you want a length-like method without the truthiness side effect, don't call it `__len__`, or define `__bool__` explicitly to return `True`.
+
+### `__iter__` must return an *iterator*, not just an iterable
+
+The distinction: an iterable has `__iter__`; an iterator has `__iter__` **and** `__next__`. A list is iterable but is not an iterator, so returning one directly fails:
+
+```python
+class Bad:
+    def __iter__(self):
+        return [1, 2, 3]         # TypeError: iter() returned non-iterator of type 'list'
+
+class Good:
+    def __iter__(self):
+        return iter([1, 2, 3])   # or just: yield from [1, 2, 3]
+```
+
+Making the method a generator (using `yield`) is the easiest correct answer, since generators are iterators.
+
+The mirror-image mistake is defining `__next__` without `__iter__`:
+
+```python
+class N:
+    def __next__(self):
+        return 1
+
+next(N())                        # 1 — works
+[x for x in N()]                 # TypeError: 'N' object is not iterable
+```
+
+An iterator needs `__iter__` too, returning `self`. That's what makes `for` loops and everything built on them work.
+
+### Arithmetic should return `NotImplemented`, not raise
+
+When `__add__` can't handle the other operand, returning the `NotImplemented` singleton tells Python to try the reflected operation `other.__radd__(self)` before giving up. Raising `TypeError` yourself short-circuits that:
+
+```python
+class Friendly:
+    def __radd__(self, other):
+        return "Friendly handled it"
+
+class Bad:
+    def __add__(self, other):
+        raise TypeError("Bad cannot add")
+
+class Good:
+    def __add__(self, other):
+        return NotImplemented
+
+Bad() + Friendly()     # TypeError: Bad cannot add
+Good() + Friendly()    # 'Friendly handled it'
+```
+
+`Bad` broke a class it has never heard of. `Good` declines and lets Python find the operand that does know what to do — which is the entire mechanism behind mixed-type arithmetic (`int + Fraction`, `ndarray + list`). Python still raises a perfectly good `TypeError` if both sides decline. The same applies to `__eq__`: return `NotImplemented` for types you don't recognise rather than `False`, so the other side gets its turn.
+
+### `__new__` runs before `__init__`
+
+`MyClass(x)` is two steps: `__new__` creates the instance, `__init__` initialises the one it returned.
+
+```python
+class S:
+    def __new__(cls, *args):
+        print("__new__")
+        return super().__new__(cls)
+    def __init__(self, x):
+        print("__init__")
+
+S(1)         # __new__ then __init__
+```
+
+`__new__` is a static method taking the *class*, and it's what you need when the instance has to be built differently rather than filled in differently — subclassing immutable built-ins (`int`, `str`, `tuple`), which are fully constructed before `__init__` ever runs, or singleton and caching patterns.
+
+The gotcha: **`__init__` is only called if `__new__` returns an instance of the class.** Return something else and initialisation is silently skipped, with no error at all:
+
+```python
+class S2:
+    def __new__(cls, *args):
+        return 42
+    def __init__(self, x):
+        print("never runs")
+
+S2(1)        # 42
+```
+
+### `__call__` makes instances callable
+
+```python
+class Squarer:
+    def __call__(self, x):
+        return x * x
+
+f = Squarer()
+f(5)         # 25 — i.e. type(f).__call__(f, 5)
+```
+
+The reason this matters for reading library code: a callable object is a function that also carries state and can be introspected, configured, or subclassed. PyTorch's `nn.Module` is the well-known case — `model(x)` works because `Module.__call__` runs hooks and then dispatches to `forward`, which is why the docs tell you to call `model(x)` and never `model.forward(x)`.
+
+### Already covered elsewhere
+
+Three more that belong on any gotcha list, handled earlier in this post: defining `__eq__` without `__hash__` makes instances unhashable, and a `__hash__` derived from mutable state [breaks dictionaries](#mutable-state-in-hash-breaks-dictionaries); an `__exit__` that returns a truthy value [silently swallows the exception](#context-managers); and `__slots__` [removes `__dict__`](#slots), so undeclared attributes raise `AttributeError` — unless a subclass forgets to declare `__slots__` and quietly hands it back.
+
+### The three worth mastering
+
+If the goal is reading framework code, these are the highest-leverage ones: `__getattribute__` (intercepts every attribute lookup), `__setattr__` (intercepts every assignment), and `__getattr__` (supplies the misses). Descriptors, properties, proxies, lazy loading, ORM field access and most of what looks like magic in a large Python library are built out of those three.
+
 ## The GIL
 
 The **Global Interpreter Lock** is a single mutex that a CPython thread must hold to execute Python bytecode. One thread runs bytecode at a time, per interpreter — so pure-Python CPU work does not scale across cores with threads, no matter how many you start.
