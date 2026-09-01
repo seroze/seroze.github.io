@@ -725,6 +725,137 @@ def timer(label):
 
 The `try/finally` matters: without it, an exception in the body propagates out of the `yield` and the teardown never runs.
 
+### Scoping a `ContextVar` with a context manager
+
+The two features answer complementary questions, which is why they show up together constantly. A [`ContextVar`](#thread-locals) is *where* ambient state lives — the current user, the active transaction, a request ID, a locale. A context manager is *how long* that state stays in effect.
+
+The state in question is the kind that every layer needs and nobody wants in a signature:
+
+```python
+def save_file(user, filename): ...
+def send_email(user, msg): ...
+def log_action(user, action): ...
+```
+
+Threading `user` through every function — including the ten that don't use it themselves and only pass it along — is the problem. A module-level global would fix the signatures and break under concurrency, since two interleaved requests would overwrite each other. A `ContextVar` gives each execution context its own value.
+
+The pairing looks like this, and it barely varies:
+
+```python
+from contextvars import ContextVar
+from contextlib import contextmanager
+
+current_user = ContextVar("current_user", default=None)
+
+@contextmanager
+def as_user(username):
+    token = current_user.set(username)
+    try:
+        yield
+    finally:
+        current_user.reset(token)
+```
+
+```python
+def log_action(action):
+    print(current_user.get(), action)
+
+with as_user("Alice"):
+    log_action("uploaded")      # Alice uploaded
+
+current_user.get()              # None
+```
+
+`__enter__` installs the value, the body sees it from any depth of call stack without being handed it, and `__exit__` puts back whatever was there before. The `finally` is doing real work — without it, an exception in the body would leave the variable set.
+
+### Why `set` returns a token
+
+The obvious implementation would be to save the old value and set it back on the way out. `reset(token)` is that, done properly: `set` hands you a token holding the previous state, and `reset` restores exactly it. What that buys you is nesting.
+
+```python
+with as_user("Alice"):
+    print(current_user.get())       # Alice
+    with as_user("Bob"):
+        print(current_user.get())   # Bob
+    print(current_user.get())       # Alice
+```
+
+Think of it as a stack. Each `set` pushes, each `reset` pops back to precisely the value that `set` displaced — not to the default, and not to whatever happens to be current. That's what makes temporary impersonation, nested transactions and re-entrant scopes work without any bookkeeping of your own.
+
+Tokens are more restricted than they look, in ways that only bite at runtime:
+
+```python
+tok = var.set("x")
+var.reset(tok)
+var.reset(tok)     # RuntimeError: <Token ...> has already been used once
+```
+
+A token is single-use, and it's bound to the context it was created in — resetting one from a different context (inside a `Context.run`, or another task) raises `ValueError: <Token ...> was created in a different Context`. Both are arguments for keeping `set` and `reset` in the same `with` block rather than passing tokens around, which the context-manager pattern enforces for free.
+
+One more: a `ContextVar` declared without a `default` raises `LookupError` on `get()` before anything sets it, not `None`. Either give it a default or use `var.get(fallback)`.
+
+### A second shape: yielding the resource
+
+`as_user` yields nothing, because the point is the ambient value. When the managed thing is also useful directly, yield it — a transaction is the canonical case, and it puts commit/rollback and the reset in one place:
+
+```python
+current_tx = ContextVar("current_tx")
+
+@contextmanager
+def transaction():
+    tx = Database.begin()
+    token = current_tx.set(tx)
+    try:
+        yield tx
+        tx.commit()
+    except Exception:
+        tx.rollback()
+        raise
+    finally:
+        current_tx.reset(token)
+
+def insert(row):
+    current_tx.get().execute(row)   # never passed a transaction
+
+with transaction():
+    insert("a")
+    insert("b")                     # both inside tx1, committed on exit
+```
+
+Note the ordering: `tx.commit()` sits after the `yield` inside `try`, so it only runs when the body completed; the `except` rolls back and re-raises so the caller still sees the failure; the `finally` restores the variable on both paths. Catch `Exception` rather than writing a bare `except:` — bare catches `BaseException`, which includes `KeyboardInterrupt` and the `GeneratorExit` that `contextlib` itself uses.
+
+The standard library ships exactly this pattern. `decimal.localcontext()` scopes precision the same way:
+
+```python
+decimal.getcontext().prec               # 28
+with decimal.localcontext() as ctx:
+    ctx.prec = 5
+    decimal.Decimal(1) / decimal.Decimal(3)   # Decimal('0.33333')
+decimal.getcontext().prec               # 28 — restored
+```
+
+### How it behaves under asyncio
+
+This is the payoff over a global or a [thread-local](#thread-locals): each task gets its own logical copy, so interleaving is safe. The direction of inheritance is worth knowing precisely — a task copies the context as it exists *when the task is created*, and its own writes don't propagate back:
+
+```python
+user = ContextVar("user", default="nobody")
+
+async def child(name):
+    print(user.get())               # Alice — inherited from the parent
+    user.set("mutated-by-" + name)  # invisible outside this task
+
+async def main():
+    token = user.set("Alice")
+    await asyncio.gather(child("a"), child("b"))
+    print(user.get())               # Alice, not mutated-by-b
+    user.reset(token)
+```
+
+So a `with as_user("Alice"):` around task creation reaches every task started inside it, and no task can corrupt a sibling or its parent. That one-way flow is the whole reason `ContextVar` exists and a plain global doesn't work.
+
+The short version: the `ContextVar` holds the state, the context manager owns its lifetime, `set` returns the receipt, and `reset` redeems it.
+
 ## Decorators
 
 ```python
