@@ -31,19 +31,8 @@ uv init my-project
 cd my-project
 ```
 
-If you've already made the directory and you're sitting inside it, pass `.`
-instead of a name and `uv` will use the directory's own name as the project
-name:
-
-```bash
-mkdir my-project && cd my-project
-uv init --lib .
-```
-
-`--lib` is what gives you the `src/` layout below; without it `uv` writes a
-flat `main.py` script instead.
-
-This scaffolds:
+By default that scaffolds an *application* — a flat layout with a runnable
+script and no package directory:
 
 ```
 my-project/
@@ -51,9 +40,50 @@ my-project/
 ├── README.md
 ├── .python-version      # pins the Python version for this project
 ├── .gitignore
+└── main.py              # def main(): print("Hello from my-project!")
+```
+
+Pass `--lib` and you get a *library* instead — the `src/` layout, with the
+package named after the project:
+
+```bash
+uv init --lib my-project
+```
+
+```
+my-project/
+├── pyproject.toml       # now also carries [build-system]
+├── README.md
+├── .python-version
+├── .gitignore
 └── src/
     └── my_project/
-        └── __init__.py
+        ├── __init__.py
+        └── py.typed     # marks the package as typed (PEP 561)
+```
+
+The difference that matters is in `pyproject.toml`, not the directory tree. The
+application version has no `[build-system]` table at all, which is deliberate:
+an app is something you run, not something anything else installs. `--lib` adds
+one, so the project can actually be built and imported by name:
+
+```toml
+[build-system]
+requires = ["uv_build>=0.11.28,<0.12.0"]   # pin tracks your uv version
+build-backend = "uv_build"
+```
+
+(It also fills in `authors` from your git config.) So the choice isn't really
+flat-vs-`src/` — it's whether anything will ever import this project, which is
+the same question the [src layout section](#typical-project-structure) below
+turns on.
+
+If you've already made the directory and you're sitting inside it, pass `.`
+instead of a name and `uv` takes the project name from the directory:
+
+```bash
+mkdir my-project && cd my-project
+uv init --lib .
 ```
 
 Notice there's no `.venv/` yet. That's by design — `uv init` only writes files
