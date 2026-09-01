@@ -23,6 +23,12 @@ def sync():
 The code is at [github.com/seroze/pickup](https://github.com/seroze/pickup).
 These are the notes from building it, phase by phase.
 
+## Contents
+{:.no_toc}
+
+* TOC placeholder — replaced by kramdown
+{:toc}
+
 ## Phase 0–1: records, codec, journal
 
 The journal is an append-only JSONL file. One record per line: an open record
