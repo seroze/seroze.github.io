@@ -835,6 +835,112 @@ A.__dict__["f"].__get__(a, A)   # the same bound method — this is what a.f *is
 
 Once you see that, the rest of the object model falls out of the same idea: `staticmethod` is a descriptor whose `__get__` returns the underlying function unchanged; `classmethod` is one that binds the *class* instead of the instance; `functools.cached_property` is a non-data descriptor that computes once and writes the result into `obj.__dict__`, so step 3 shadows it on every subsequent access; `__slots__` entries are data descriptors reading and writing fixed offsets in the instance struct. ORMs and validation libraries (`Model.name = CharField(...)`) are the same trick at application level.
 
+## Bypassing a custom `__setattr__` with `object.__setattr__`
+
+Every attribute assignment goes through a method call. `self.x = 5` is not a direct write into the instance dict — Python compiles it to `type(self).__setattr__(self, 'x', 5)`. The default implementation lives on `object`, the base class every class inherits from, and it's the thing that actually stores the value (into `__dict__`, or into a slot descriptor if the class defines `__slots__`).
+
+That indirection is what makes overriding `__setattr__` possible, and it's also what makes it easy to get wrong.
+
+```python
+class A:
+    def __setattr__(self, name, value):
+        print(f"setting {name} = {value}")
+
+a = A()
+a.x = 10          # setting x = 10
+a.x               # AttributeError: 'A' object has no attribute 'x'
+```
+
+The override intercepts the assignment, and nothing is stored — printing is all this version does. Once you take over `__setattr__`, storing the value is your job, and the obvious way to do it is a trap:
+
+```python
+class A:
+    def __setattr__(self, name, value):
+        print(f"setting {name} = {value}")
+        self.name = value      # RecursionError
+```
+
+`self.name = value` is itself an attribute assignment, so it calls `__setattr__`, which assigns again, forever, until Python gives up with `RecursionError: maximum recursion depth exceeded`. (There's a second bug hiding in that line — `self.name` writes an attribute literally called `name`, not the attribute whose name is *in* the variable `name` — but you never get far enough to notice it.)
+
+The fix is to call the base implementation directly:
+
+```python
+class A:
+    def __setattr__(self, name, value):
+        print(f"setting {name} = {value}")
+        object.__setattr__(self, name, value)
+
+a = A()
+a.x = 10          # setting x = 10
+a.x               # 10
+```
+
+`object.__setattr__(self, name, value)` performs the real assignment without routing back through the override. It's just the base class's method, called explicitly on `self` — the same move as calling `super().__init__()`, spelled out longhand.
+
+### The bootstrap problem
+
+The other reason to reach for it is subtler. A custom `__setattr__` usually depends on some state of its own, and that state has to exist *before* the first assignment happens. Consider an object that stores attributes in a per-thread dictionary rather than in the instance:
+
+```python
+import threading
+
+class ThreadLocal:
+    def __init__(self):
+        object.__setattr__(self, "_thread_dicts", {})
+
+    def __setattr__(self, name, value):
+        self._thread_dicts.setdefault(threading.get_ident(), {})[name] = value
+```
+
+That sketch is a hand-rolled [thread-local](#thread-locals) — an object whose attributes are private to whichever thread touches them.
+
+If `__init__` wrote `self._thread_dicts = {}` instead, that assignment would go through `__setattr__`, which reads `self._thread_dicts` — which doesn't exist yet. You'd get an `AttributeError` on the very first line of construction. `object.__setattr__` is the only way to place that first attribute, because it's the only write that doesn't go through the machinery you're still setting up.
+
+The standard library does exactly this. A frozen dataclass generates a `__setattr__` that raises `FrozenInstanceError`, so its generated `__init__` can't populate the fields by normal assignment. Disassemble it and you'll find the escape hatch:
+
+```python
+>>> import dataclasses, dis
+>>> @dataclasses.dataclass(frozen=True)
+... class P:
+...     x: int
+>>> [i.argval for i in dis.get_instructions(P.__init__)]
+[..., '__dataclass_builtins_object__', '__setattr__', ...]
+```
+
+Frozen-ness is enforced on the public path and bypassed once, internally, to build the object.
+
+### `super()` is usually the better call
+
+Hardcoding `object` skips *every* `__setattr__` between your class and `object`, not just your own:
+
+```python
+class B:
+    def __setattr__(self, n, v):
+        print("B.__setattr__"); super().__setattr__(n, v)
+
+class C(B):
+    def __setattr__(self, n, v):
+        object.__setattr__(self, n, v)      # B's logic never runs
+
+class D(B):
+    def __setattr__(self, n, v):
+        super().__setattr__(n, v)           # B.__setattr__, then object's
+```
+
+`super().__setattr__(name, value)` walks the MRO and preserves the chain, which is what you usually want. Reach for `object.__setattr__` when you specifically mean "the raw default, nothing else" — as in the bootstrap case above, where the whole point is to skip everything.
+
+### The same trap on the read side
+
+`__getattribute__` has the identical problem, and it bites harder because it intercepts *every* attribute access, not just assignments. Any `self.anything` inside it re-enters it:
+
+```python
+class A:
+    def __getattribute__(self, name):
+        return object.__getattribute__(self, name)     # self.__dict__ here would recurse
+```
+
+`__delattr__` pairs with `object.__delattr__` the same way. Worth keeping straight that `__getattr__` — no `ute` — is *not* affected, because it only runs as a fallback after normal lookup has already failed. Reading `self.x` inside `__getattr__` is fine, as long as `x` actually exists.
+
 ## The GIL
 
 The **Global Interpreter Lock** is a single mutex that a CPython thread must hold to execute Python bytecode. One thread runs bytecode at a time, per interpreter — so pure-Python CPU work does not scale across cores with threads, no matter how many you start.
@@ -879,6 +985,106 @@ Worth knowing that this is actively changing. Python 3.12 gave sub-interpreters 
 **`asyncio`** — use it when you have thousands of concurrent I/O operations and control over the whole stack. One thread, one event loop, coroutines that suspend at `await`. It's the cheapest per unit of concurrency by a wide margin, which is why it dominates for network servers, proxies, crawlers and anything fan-out-heavy. Concrete case: an API gateway holding 10k open connections, or a crawler issuing 5k concurrent requests with `httpx`/`aiohttp`. The catch is that it's *cooperative*: one blocking call — a synchronous DB driver, a `time.sleep`, a heavy CPU loop — stalls every task on the loop. Escape hatches are `loop.run_in_executor` / `asyncio.to_thread` for blocking calls, and a process pool for CPU work.
 
 The one-line version: **blocking I/O through sync libraries → threads; CPU-bound Python → processes; massive concurrent I/O with an async stack → asyncio.** And they compose — an asyncio service with a `ProcessPoolExecutor` for its heavy computation is a perfectly normal shape.
+
+## Thread-locals
+
+A thread-local is an object whose attributes are private to whichever thread touches it. One object, many independent namespaces, picked automatically by the current thread:
+
+```python
+import threading
+
+tl = threading.local()
+tl.value = "main"
+
+def worker():
+    print(getattr(tl, "value", "<unset>"))     # <unset>
+    tl.value = "worker"
+
+t = threading.Thread(target=worker)
+t.start(); t.join()
+
+print(tl.value)                                # main
+```
+
+The worker doesn't see the main thread's `value` and can't clobber it. That's the whole idea: state that is global in *scope* but per-thread in *identity*.
+
+The mechanism is the one from [the `object.__setattr__` section](#bypassing-a-custom-setattr-with-objectsetattr) above. `threading.local` overrides `__getattribute__` and `__setattr__` to swap in a different `__dict__` depending on `threading.get_ident()`, and the hand-rolled version bootstraps its storage with `object.__setattr__` for exactly the reason described there. The real one is implemented in C, but the shape is the same.
+
+### What it's for
+
+Two things, mostly.
+
+The first is avoiding a parameter that every layer would otherwise have to pass. A request ID, a database connection, a locale, the current user — things that logically belong to "whatever we're doing right now" rather than to any particular function. Threading a `request_id` argument through eight call frames so the logging call at the bottom can use it is the problem thread-locals exist to solve. `decimal` works this way in the standard library: set the precision in one thread and a second thread still sees the default 28. SQLAlchemy's `scoped_session` is the same pattern at library level, handing each thread its own `Session`.
+
+The second is avoiding locks. A `Lock` is only needed because threads share state; if each thread has its own copy, there is nothing to serialise. Reusing an expensive-to-build, not-thread-safe object — a parser, an HTTP session, a database cursor — one per thread instead of one globally is a common and legitimate pattern.
+
+### Each thread starts empty
+
+The example above already showed this, and it's the mistake people actually make: values set in the main thread are not inherited by threads it starts. There's no copying and no default. Every thread that wants a value has to set one, which is why thread-local code usually reads through `getattr(tl, "x", default)` or catches `AttributeError` rather than assuming the attribute is there.
+
+Subclassing changes this in a way that surprises people the first time:
+
+```python
+class L(threading.local):
+    def __init__(self):
+        print("init in", threading.current_thread().name)
+        self.v = 0
+
+l = L()                        # init in MainThread
+```
+
+`__init__` runs **once per thread**, not once per object — again in each new thread, the first time that thread touches `l`. Start two workers that read `l.v` and you'll see `init in w0` and `init in w1` printed as well. That's the documented way to give every thread the same initial state, and it's genuinely useful, but it does mean `__init__` runs at unpredictable times and must be cheap and side-effect-free.
+
+### The thread-pool footgun
+
+Thread-local values live as long as the thread does, which is fine when threads map to units of work. Pools break that assumption — the threads outlive the tasks and get reused:
+
+```python
+from concurrent.futures import ThreadPoolExecutor
+
+tl = threading.local()
+
+def task(i):
+    seen = getattr(tl, "v", "<unset>")
+    tl.v = i
+    return i, seen
+
+with ThreadPoolExecutor(max_workers=1) as ex:
+    print(list(ex.map(task, range(3))))
+    # [(0, '<unset>'), (1, 0), (2, 1)]
+```
+
+Task 1 sees task 0's leftovers. With a real workload that's one request's user ID visible to the next request that happens to land on the same worker — a data leak that only shows up under load, which is when the pool starts reusing threads aggressively. If you put per-task state in a thread-local behind a pool, clear it in a `finally` at the top of the task.
+
+### Under asyncio, use `contextvars` instead
+
+Thread-locals key on the thread, and an event loop runs thousands of tasks on *one* thread. So they don't isolate anything there:
+
+```python
+import asyncio, contextvars, threading
+
+cv = contextvars.ContextVar("cv", default="<unset>")
+tl = threading.local()
+
+async def t(i):
+    cv.set(i)
+    tl.v = i
+    await asyncio.sleep(0.01)
+    return i, cv.get(), tl.v
+
+async def main():
+    return await asyncio.gather(*(t(i) for i in range(3)))
+
+asyncio.run(main())
+# [(0, 0, 2), (1, 1, 2), (2, 2, 2)]
+#      ↑          ↑
+#      contextvar: each task keeps its own
+#                 thread-local: all three see the last writer
+```
+
+Every task set `tl.v`, and after the `await` they all read `2`, because they're all the same thread. `ContextVar` is the tool that actually tracks the logical unit of work: each task gets a copy of the context when it's created, so writes don't escape it. It also works correctly in threads, which makes it the better default in new code even without asyncio in the picture — this is why Flask 2.x moved its request context off thread-locals and onto contextvars.
+
+The rule of thumb: `threading.local` if your unit of concurrency is a thread, `contextvars.ContextVar` if it's a task, and `ContextVar` when you're unsure, because it's correct in both.
 
 ## Method resolution order and C3
 
