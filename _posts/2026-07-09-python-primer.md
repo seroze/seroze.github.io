@@ -3,7 +3,7 @@ layout: post
 title: "A primer on Python"
 date: 2026-07-09 00:00:00 +0530
 categories: python
-tags: [python, typing, protocols, descriptors, generators, concurrency, competitive_programming]
+tags: [python, typing, protocols, descriptors, generators, concurrency]
 author: "Seroze"
 published: true
 ---
@@ -1032,6 +1032,84 @@ With `i = 2` and `j = 2` that's `-4 % 3`, which Python evaluates to `2`, and
 $$2 + 2 + 2 = 6 \equiv 0 \pmod 3$$
 
 exactly as needed. There's no `if k < 0` afterwards and no `+ 3` fudge factor; the sign rule already landed the answer in `[0, 3)`. C++ gives `-1` for that same expression, which is why C-family code writes `((-i - j) % 3 + 3) % 3` or `(3 - (i + j) % 3) % 3` instead. That trailing `+ m) % m` is the tell that you're reading modular arithmetic written for a language that truncates.
+
+## Flat layout vs `src/` layout
+
+Open a few Python repos and you'll notice they don't agree on where the package lives. Some put it right at the root next to `pyproject.toml`; others bury it one level down inside `src/`. Both are normal, both install and import identically once packaged, and the difference only bites you while you're working *inside* the repo.
+
+The **flat layout** puts the importable package directly at the repo root. `evalscope` is one of many that do this — there's no `src/` anywhere, just a directory named after the package:
+
+```
+evalscope/                  # repo root
+├── pyproject.toml
+├── evalscope/              # the actual importable package
+│   ├── __init__.py
+│   ├── benchmarks/
+│   ├── models/
+│   └── ...
+├── tests/
+└── README.md
+```
+
+The **src layout** nests it one level deeper:
+
+```
+some-project/
+├── pyproject.toml
+├── src/
+│   └── some_project/       # the importable package
+│       ├── __init__.py
+│       └── ...
+└── tests/
+```
+
+The build backend — setuptools, hatchling, whatever `pyproject.toml` names — knows how to find the package either way, so a wheel built from either layout is the same wheel. Nothing about the installed result differs.
+
+What differs is accidental imports during local development. Python puts the current directory at the front of `sys.path`, so with a flat layout, `cd`-ing into the repo root and starting a REPL or a notebook makes `import evalscope` succeed immediately — even if you never ran `pip install -e .`. That's convenient for quick hacking and genuinely dangerous otherwise. You can be running uncommitted working-tree code while believing you're testing the installed version, and packaging bugs stay invisible: a missing `__init__.py`, a data file that never made it into the wheel, a module you forgot to list. None of that shows up until someone installs the thing for real.
+
+The `src/` layout makes that failure loud. `some_project` simply isn't importable from the repo root, because `sys.path` gets you `src/`, not `src/some_project/`. You're forced to `pip install -e .` and test against the actual installed package, which means your tests exercise the same import path your users will. That's why pytest's good-practices page and setuptools both recommend it, and why the [Python Packaging User Guide](https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/) leans the same way when it weighs the two — **`src/` is the one to reach for on a new project.** Flat layout survives mostly in older repos and in projects that predate the recommendation.
+
+Reading someone else's repo, none of this matters. If you `pip install`ed the package rather than working inside its checkout, the layout is purely a "where do I find the source" question. It affects nothing at runtime.
+
+### How does `pyproject.toml` know which layout you're using?
+
+It's told — by one line naming the directory the build backend should search for packages. For setuptools that's:
+
+```toml
+[tool.setuptools.packages.find]
+where = ["src"]
+```
+
+That is the entire mechanism for a `src` layout. The backend walks `src/`, finds every subdirectory containing an `__init__.py`, and includes each as a package in the wheel. For a flat layout the search root is the repo root instead:
+
+```toml
+[tool.setuptools.packages.find]
+where = ["."]
+```
+
+Flip `where` and you've switched layouts as far as packaging is concerned — nothing else in `pyproject.toml` needs to know, and no import statement changes, because the package's own name never moved.
+
+In practice you'll often see neither block. Setuptools 61+ does auto-discovery: with no `packages` config at all it looks for a single top-level package at the root, and if that fails it looks inside `src/`. Both layouts therefore build fine with an empty-ish `pyproject.toml`, which is why plenty of real repos — evalscope included — never spell this out. Auto-discovery bails out with an error when the root is ambiguous, though, and that's when you write the `where` line by hand. Being explicit is the safer habit regardless; it's one line, and it turns a convention into a fact.
+
+Other backends ask the same question with different TOML. Hatchling:
+
+```toml
+[tool.hatch.build.targets.wheel]
+packages = ["src/some_project"]
+```
+
+Poetry:
+
+```toml
+[tool.poetry]
+packages = [{ include = "some_project", from = "src" }]
+```
+
+Flit is the opinionated one — it expects the package to sit at `some_project/` or `src/some_project/` and derives it from the project name, so there's usually nothing to configure. Same underlying question every time: where does the package directory live relative to the repo root?
+
+To see what actually got installed rather than what the config claims, `python -c "import evalscope; print(evalscope.__file__)"` prints the resolved path, and `pip show -f evalscope` lists every installed file. Neither tells you the source repo's layout — by then the layout has been compiled away — but they do confirm you're importing from `site-packages` and not from a directory you happen to be standing in.
+
+The mechanics of why `src/` requires the install — and how to stop VSCode complaining about it — are in [Setting up a Python project](/python-project-setup/#how-python-import-resolution-actually-works-and-why-src-requires-installing).
 
 ## 20 GB of CSV: pandas, NumPy, or Polars?
 
