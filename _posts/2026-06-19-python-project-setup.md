@@ -31,6 +31,18 @@ uv init my-project
 cd my-project
 ```
 
+If you've already made the directory and you're sitting inside it, pass `.`
+instead of a name and `uv` will use the directory's own name as the project
+name:
+
+```bash
+mkdir my-project && cd my-project
+uv init --lib .
+```
+
+`--lib` is what gives you the `src/` layout below; without it `uv` writes a
+flat `main.py` script instead.
+
 This scaffolds:
 
 ```
