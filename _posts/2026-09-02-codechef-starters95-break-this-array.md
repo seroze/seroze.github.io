@@ -168,70 +168,77 @@ in the field $$\mathbb{Z}_p$$ rather than with fractions.
 ## Code
 
 ```python
-import sys
 MOD = 10**9 + 7
 
-def solve(n, a, s):
-    inv = [0] * (n + 1)                      # modular inverses 1..n, linear sieve
-    if n >= 1:
-        inv[1] = 1
-    for i in range(2, n + 1):
-        inv[i] = (MOD - (MOD // i) * inv[MOD % i]) % MOD
+def solve():
+    n, k = map(int, input().split())
+    a = list(map(int, input().split()))
+    s = input().strip()
 
-    dp = [[0] * n for _ in range(n)]         # 0-indexed intervals
+    # Precompute modular inverses
+    inv = [1] * (n + 1)
+    for i in range(2, n + 1):
+        inv[i] = pow(i, MOD - 2, MOD)
+
+    # dp[l][r] = probability after current step
+    dp = [[0] * n for _ in range(n)]
     dp[0][n - 1] = 1
 
     for ch in s:
         ndp = [[0] * n for _ in range(n)]
+
         for l in range(n):
-            row = dp[l]
             for r in range(l, n):
-                p = row[r]
-                if not p:
+                if dp[l][r] == 0:
                     continue
-                if l == r:                   # singleton: the operation is skipped
-                    ndp[l][l] = (ndp[l][l] + p) % MOD
+
+                length = r - l + 1
+
+                # singleton stays forever
+                if length == 1:
+                    ndp[l][r] = (ndp[l][r] + dp[l][r]) % MOD
                     continue
-                share = p * inv[r - l] % MOD  # r-l cut positions, all equally likely
+
                 if ch == 'L':
+                    # keep left part
                     for cut in range(l, r):
-                        ndp[l][cut] = (ndp[l][cut] + share) % MOD
+                        # resulting interval = [l, cut]
+                        ndp[l][cut] += dp[l][r] * inv[length - 1]
+                        ndp[l][cut] %= MOD
                 else:
+                    # keep right part
                     for cut in range(l, r):
-                        ndp[cut + 1][r] = (ndp[cut + 1][r] + share) % MOD
+                        # resulting interval = [cut+1, r]
+                        ndp[cut + 1][r] += dp[l][r] * inv[length - 1]
+                        ndp[cut + 1][r] %= MOD
+
         dp = ndp
 
-    pref = [0] * (n + 1)
-    for i, x in enumerate(a):
-        pref[i + 1] = pref[i] + x
+    # prefix sums of original array
+    pref = [0]
+    for x in a:
+        pref.append(pref[-1] + x)
 
     ans = 0
     for l in range(n):
         for r in range(l, n):
-            if dp[l][r]:
-                ans = (ans + (pref[r + 1] - pref[l]) % MOD * dp[l][r]) % MOD
-    return ans
+            segsum = pref[r + 1] - pref[l]
+            ans = (ans + segsum * dp[l][r]) % MOD
 
-def main():
-    data = sys.stdin.buffer.read().split()
-    p = 0
-    t = int(data[p]); p += 1
-    out = []
-    for _ in range(t):
-        n, k = int(data[p]), int(data[p + 1]); p += 2
-        a = list(map(int, data[p:p + n])); p += n
-        s = data[p].decode(); p += 1
-        out.append(solve(n, a, s))
-    sys.stdout.write("\n".join(map(str, out)) + "\n")
+    print(ans)
 
-main()
+
+t = int(input())
+for _ in range(t):
+    solve()
 ```
 
-Two small things worth copying regardless of the rest. The inverses come from the linear
-recurrence $$\text{inv}[i] = -\lfloor p/i \rfloor \cdot \text{inv}[p \bmod i]$$ rather than $$n$$
-separate calls to `pow` — it's one pass and you need every inverse anyway. And the final sum uses
-a prefix-sum array, because $$A_i$$ can be $$10^9$$ and a segment sum can overflow past the
-modulus if you're careless in a language without big integers.
+Two small things worth noting. The inverses are precomputed once per test case with Fermat's
+little theorem — $$i^{-1} \equiv i^{p-2} \pmod p$$ — so the inner loops never call `pow` again;
+if you want it faster, the linear recurrence
+$$\text{inv}[i] = -\lfloor p/i \rfloor \cdot \text{inv}[p \bmod i]$$ gets all $$n$$ of them in
+one pass. And the final sum goes through a prefix-sum array, because $$A_i$$ can be $$10^9$$ and a
+segment sum can overflow past the modulus if you're careless in a language without big integers.
 
 ## Checking it
 
