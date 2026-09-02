@@ -29,6 +29,7 @@
   --border: #e8e8e8;
   --code-bg: #eef;
   --header-rule: #424242;
+  --accent-red: #c0392b;
 }
 
 @mixin dark-palette {
@@ -42,6 +43,7 @@
   --border: #3a3a3a;
   --code-bg: #202020;
   --header-rule: #4a4a4a;
+  --accent-red: #ff7b72;
 }
 
 // Follow the OS, unless the reader has explicitly asked for light.
@@ -51,6 +53,14 @@
 
 // An explicit choice always wins over the OS.
 :root[data-theme="dark"] { @include dark-palette; }
+
+/* A one-line aside in red, used sparingly to flag the point of a post. */
+.note-red {
+  color: var(--accent-red);
+  border-left: 3px solid var(--accent-red);
+  padding-left: 0.75em;
+  display: block;
+}
 
 /* ----- re-point minima at the tokens ----- */
 

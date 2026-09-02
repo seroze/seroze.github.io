@@ -318,3 +318,16 @@ isn't forwarded is probability that's lost.
 gave me an oracle to test the fast version against — and it made the redundancy visible, because
 you can *see* the inner loop writing the same value into consecutive cells. Optimising a DP you
 haven't yet written correctly is how you end up with something that's both wrong and fast.
+
+<div class="note-red" markdown="1">
+**Push or pull? Look at which side of the update the loop sits on.** A pull writes one cell and
+reads many — `dp[state] = Σ over parents` — while a push reads one cell and writes many —
+`for child: ndp[child] += share`. Same recurrence, opposite direction, and the direction is what
+decides whether you can optimise it. In pull form each entry is a sum over a *contiguous range* of
+the previous layer, and ranges collapse into prefix/suffix sums:
+$$dp_i[l][r] = \sum_{r' > r} dp_{i-1}[l][r'] / (r' - l)$$ is a suffix sum along the fixed row
+$$l$$, so one downward sweep fills the whole row and the layer drops from $$O(N^3)$$ to
+$$O(N^2)$$. A push scatters the same value
+into many cells, and a scatter has no structure to collapse. So: think in push to get the
+probabilities right, then rewrite as a pull to make it fast.
+</div>
