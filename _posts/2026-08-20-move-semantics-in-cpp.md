@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "Move Semantics in C++"
+title: "[Cpp] Move Semantics in C++"
 date: 2026-08-20 00:00:00 +0530
 categories: cpp
 tags: [cpp, move_semantics, value_categories, rvalue_references]
