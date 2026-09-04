@@ -906,7 +906,7 @@ def retry(times=3, exceptions=(Exception,)):
                     return fn(*args, **kwargs)
                 except exceptions:
                     if attempt == times - 1:
-                        raise
+                        raise          # retries exhausted — re-raise, traceback intact
         return wrapper
     return decorator
 
@@ -915,6 +915,19 @@ def fetch(): ...
 ```
 
 The outer layer closes over the configuration, the middle layer is the actual decorator, the inner one is the wrapper. Miss a layer and you get the classic error where the decorated name ends up bound to a decorator rather than a function.
+
+<div class="note-red" markdown="1">
+**That bare `raise` on the last attempt is deliberate — don't write `raise e`.** Both are legal
+and both re-raise the same exception object, but bare `raise` re-raises the exception *currently
+being handled* with its traceback untouched, while `raise e` is a fresh raise statement that
+staples the re-raise line on as an extra frame. So the traceback stops pointing at the socket call
+inside `fetch` that actually timed out and starts pointing at line 10 of your decorator — which is
+the least interesting line in the whole stack, and the one place you already knew the exception
+passed through. A retry wrapper sits between the caller and the real failure, so this is exactly
+where you can least afford to blur the origin. If the terseness is what bothers you, add the
+comment, not the name. The full traceback comparison is in
+[the exception handling post](/python-exception-handling/#5-raise-vs-raise-e).
+</div>
 
 ### Working with and without parentheses
 
@@ -985,7 +998,7 @@ class Retry:
                     return fn(*args, **kwargs)
                 except Exception:
                     if attempt == self.times - 1:
-                        raise
+                        raise          # same bare re-raise as above
         return wrapper
 
 @Retry(times=5)
