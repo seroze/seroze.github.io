@@ -890,11 +890,192 @@ def timer(fn):
 
 `functools.wraps` copies `__name__`, `__doc__`, `__module__`, `__qualname__`, type annotations and `__dict__` from the original onto the wrapper, and sets `__wrapped__` so `inspect.signature` can see through it. Without it, your decorated functions all show up as `wrapper` in tracebacks, logs and docs — the classic sign of a decorator written in a hurry.
 
-Two follow-ups that come up often:
+That is the whole idea, and everything below is a variation on it. The shapes are worth collecting in one place, because which one you reach for is usually decided by two questions: does the decorator need configuration, and does it need to remember anything between calls.
 
-**Decorators with arguments** need one more layer, because `@retry(3)` means `foo = retry(3)(foo)` — `retry(3)` is called first and must *return* a decorator.
+### Decorators that take arguments
 
-**Stacking** applies bottom-up: with `@a` above `@b`, you get `foo = a(b(foo))`, so `b` is the inner wrapper and `a` sees `b`'s wrapper. That ordering matters a lot for things like `@staticmethod` and framework route decorators.
+`@retry(3)` is not one call, it's two: `retry(3)` runs first and whatever it returns is then applied to the function. So `foo = retry(3)(foo)`, and `retry` has to be a function that *returns a decorator* — three levels of nesting instead of two.
+
+```python
+def retry(times=3, exceptions=(Exception,)):
+    def decorator(fn):
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            for attempt in range(times):
+                try:
+                    return fn(*args, **kwargs)
+                except exceptions:
+                    if attempt == times - 1:
+                        raise
+        return wrapper
+    return decorator
+
+@retry(times=5, exceptions=(ConnectionError,))
+def fetch(): ...
+```
+
+The outer layer closes over the configuration, the middle layer is the actual decorator, the inner one is the wrapper. Miss a layer and you get the classic error where the decorated name ends up bound to a decorator rather than a function.
+
+### Working with and without parentheses
+
+`@retry` and `@retry()` are not interchangeable in the version above — the bare form passes the *function* where `times` was expected, and you get a wrapper that loops `fetch` times. If you want both spellings to work, notice that the difference is entirely in the first positional argument: it's either the function being decorated or nothing at all.
+
+```python
+def log(fn=None, *, verbose=False):
+    if fn is None:                                   # called as @log(...)
+        return functools.partial(log, verbose=verbose)
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        if verbose:
+            print("calling", fn.__name__)
+        return fn(*args, **kwargs)
+    return wrapper
+
+@log
+def a(): ...
+
+@log(verbose=True)
+def b(): ...
+```
+
+The keyword-only `*` is doing real work here: it forces every option to be passed by name, so the only thing that can ever land in `fn` is the decorated function. `functools.partial` then re-enters `log` with the config baked in and `fn` still empty, and the second call fills it. Most stdlib decorators that accept both forms — `dataclass`, for one — are written exactly this way.
+
+### Class-based decorators
+
+A decorator only has to be a callable, and classes are callable. Implementing `__call__` gives you a decorator that is an *object*, which matters when it needs to keep state that outlives a single call:
+
+```python
+class CountCalls:
+    def __init__(self, fn):
+        functools.update_wrapper(self, fn)
+        self.fn = fn
+        self.calls = 0
+
+    def __call__(self, *args, **kwargs):
+        self.calls += 1
+        return self.fn(*args, **kwargs)
+
+@CountCalls
+def greet():
+    print("hi")
+
+greet(); greet()
+greet.calls        # 2
+```
+
+`functools.update_wrapper` is the non-decorator spelling of `functools.wraps` — same copying, applied to an object you already have rather than to a function you're about to define.
+
+The counter being a plain attribute is the selling point: with the closure version you'd need `nonlocal` and there'd be no clean way to read the count from outside. The cost is that `greet` is now an *instance*, not a function, and that leaks in one place that bites: instances don't implement `__get__`, so a method decorated this way never gets bound and `self` is silently not passed. This works fine at module level and breaks inside a class body — which is exactly the fix the descriptor section explains.
+
+### Class-based decorators that take arguments
+
+Split the two jobs across the two methods: `__init__` receives the configuration, `__call__` receives the function.
+
+```python
+class Retry:
+    def __init__(self, times=3):
+        self.times = times
+
+    def __call__(self, fn):
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            for attempt in range(self.times):
+                try:
+                    return fn(*args, **kwargs)
+                except Exception:
+                    if attempt == self.times - 1:
+                        raise
+        return wrapper
+
+@Retry(times=5)
+def fetch(): ...
+```
+
+Compare with the nested-function version: `@Retry(times=5)` calls `__init__`, and the resulting instance is then called with `fetch`. It's the same two-call structure as before, just with the outer closure replaced by an object. Note that this one returns a plain function, so it doesn't have the binding problem the `CountCalls` shape does.
+
+### Decorating a class instead of a function
+
+Nothing about the syntax says the target must be a function. `@d` above a `class C` means `C = d(C)`, and a class decorator is free to mutate the class and hand it back:
+
+```python
+def add_repr(cls):
+    def __repr__(self):
+        attrs = ", ".join(f"{k}={v!r}" for k, v in vars(self).items())
+        return f"{cls.__name__}({attrs})"
+    cls.__repr__ = __repr__
+    return cls
+
+@add_repr
+class Point:
+    def __init__(self, x, y):
+        self.x, self.y = x, y
+```
+
+`@dataclass` is precisely this, at scale: it reads the annotations off the class body and writes `__init__`, `__repr__`, `__eq__` and friends onto the class. `functools.total_ordering` is another. Class decorators are the lighter-weight alternative to a metaclass — if all you want is to add or edit some attributes after the class exists, you don't need to intervene in how it was built.
+
+### Descriptor-based decorators
+
+The most powerful shape, and the one that fixes the method-binding problem above: implement `__get__` and the decorator participates in attribute lookup itself. That's how a hand-rolled `cached_property` works:
+
+```python
+class cached_property:
+    def __init__(self, fn):
+        self.fn = fn
+        functools.update_wrapper(self, fn)
+
+    def __set_name__(self, owner, name):
+        self.name = name
+
+    def __get__(self, obj, objtype=None):
+        if obj is None:                     # accessed on the class
+            return self
+        value = self.fn(obj)
+        obj.__dict__[self.name] = value     # shadows the descriptor from now on
+        return value
+
+class Model:
+    @cached_property
+    def expensive(self):
+        return sum(range(10_000_000))
+```
+
+The trick is that this is a *non-data* descriptor — no `__set__` — so once the computed value lands in the instance dict, the instance dict wins on every later access and the descriptor is never consulted again. One computation, then plain attribute reads. `@property`, `@staticmethod` and `@classmethod` are all this shape too; the [descriptor section](#descriptors--the-protocol-behind-property-methods-and-classmethod) below has the full lookup rules.
+
+### Stacking
+
+Decorators apply bottom-up, so with `@a` above `@b` you get `foo = a(b(foo))`: `b` is the inner wrapper and `a` sees `b`'s wrapper, not the original function.
+
+```python
+@timer
+@retry(times=3)
+def fetch(): ...
+```
+
+Here `retry` retries the raw call and `timer` measures the entire retry loop. Swap the two lines and `timer` measures each attempt separately — same decorators, genuinely different output. The ordering matters most with `@staticmethod`, `@classmethod` and framework route decorators, where one of the layers is doing something to the *object* rather than wrapping a call, and it has to be the outermost one to see the right thing.
+
+### The stdlib ones are the same patterns
+
+Worth knowing by shape as well as by name, because they're the reference implementations: `@functools.lru_cache` / `@functools.cache` for memoisation, `@functools.singledispatch` for type-based overloading, `@contextlib.contextmanager` for turning a generator into a `with`-able (covered in the context managers section above), `@dataclass` and `@total_ordering` as class decorators, and `@property` / `@staticmethod` / `@classmethod` as descriptors.
+
+### Keeping the type checker happy
+
+A `*args, **kwargs` wrapper erases the signature as far as a type checker is concerned — the decorated function comes out typed as `(*args: Any, **kwargs: Any) -> Any`, so wrong-argument calls stop being flagged. `ParamSpec` fixes that by capturing the parameter list as a variable:
+
+```python
+from typing import Callable, ParamSpec, TypeVar
+
+P = ParamSpec("P")
+R = TypeVar("R")
+
+def timer(fn: Callable[P, R]) -> Callable[P, R]:
+    @functools.wraps(fn)
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+        return fn(*args, **kwargs)
+    return wrapper
+```
+
+`P` stands for "whatever parameters the wrapped function had", and `R` for its return type, so the signature survives decoration intact. If the decorator *changes* the signature — adding an argument, or returning a coroutine — `Concatenate` handles the first case and a different return annotation the second.
 
 ## `__slots__`
 
