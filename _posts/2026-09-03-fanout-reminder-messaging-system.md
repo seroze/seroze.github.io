@@ -3,7 +3,7 @@ layout: post
 title: "[System Design] Fan-out Reminder Messaging System"
 date: 2026-09-03 00:00:00 +0530
 categories: system-design
-tags: [system_design, distributed_systems, kafka, notifications, interview_prep]
+tags: [system_design, distributed_systems, kafka, notifications]
 author: "Seroze"
 published: true
 ---
