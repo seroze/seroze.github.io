@@ -3,7 +3,7 @@ layout: post
 title: "[Python] Exception Handling: The Parts I Got Wrong"
 date: 2026-08-13 00:00:00 +0530
 categories: python
-tags: [python, exceptions, interview_prep]
+tags: [python, exceptions]
 author: "Seroze"
 published: true
 ---
