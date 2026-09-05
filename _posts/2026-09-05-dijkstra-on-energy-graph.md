@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "Dijkstra on energy graph"
+title: "[CodeChef] Starters 93 — Thank U, Next: dijkstra on energy graph"
 date: 2026-09-05 00:00:00 +0530
 categories: competitive-programming
 tags: [competitive_programming, codechef, graph, dijkstra, shortest_paths, python]
