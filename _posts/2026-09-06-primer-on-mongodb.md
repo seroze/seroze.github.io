@@ -8,11 +8,15 @@ author: "Seroze"
 published: true
 ---
 
-I spent an evening poking at a local sharded MongoDB cluster and the questions kept getting
-bigger. It started with something small — chunk rebalancing looks genuinely hard to get right, so
-how does anyone convince themselves it works? — and ended somewhere near "why hasn't everyone
-migrated off Postgres, given how painful sharding is there?". These are my notes from that
-session, kept to the parts I actually cared about rather than a full tour of the product.
+I spent an evening with a local MongoDB cluster and the questions kept getting bigger. It started
+with the basics — what exactly is a document, how do I query one — and by the end I was asking how
+anyone convinces themselves that chunk rebalancing is correct, and why every bank hasn't migrated
+off Postgres given how painful sharding is there.
+
+This post follows that same arc. The first half is the ground floor: the data model, how you talk
+to it, and how a cluster is actually put together. The second half is the internals I got curious
+about once the basics stopped being mysterious. If you already use MongoDB day to day, skip to
+[Nobody proves rebalancing is bug-free](#nobody-proves-rebalancing-is-bug-free).
 
 ## Navigation
 {:.no_toc}
@@ -20,10 +24,243 @@ session, kept to the parts I actually cared about rather than a full tour of the
 * TOC placeholder — replaced by kramdown
 {:toc}
 
+## The data model: documents, not rows
+
+The single idea everything else hangs off: MongoDB stores **documents**, and a document is a
+JSON-shaped object. Nested objects and arrays are first-class, not something you flatten into
+join tables.
+
+```
+   database:  "shop"
+       |
+       +-- collection: "users"
+       |        |
+       |        +-- document
+       |        |     { _id: ObjectId("651f.."),
+       |        |       name: "Sai",
+       |        |       email: "sai@example.com",
+       |        |       address: { city: "Hyderabad",     <- nested object
+       |        |                  pin: "500081" },
+       |        |       tags: [ "premium", "beta" ] }     <- array
+       |        |
+       |        +-- document { ... }
+       |
+       +-- collection: "orders"
+```
+
+Three levels: a *database* holds *collections*, a collection holds *documents*. The rough
+translation to SQL, useful right up until it stops being:
+
+| SQL | MongoDB |
+|---|---|
+| database | database |
+| table | collection |
+| row | document |
+| column | field |
+| join across tables | usually embedding, sometimes a lookup |
+
+The analogy breaks at the last row, and that's the whole point. A row is flat — to attach an
+address you make another table and join. A document nests, so the address just lives inside the
+user.
+
+### BSON, not JSON
+
+On the wire and on disk, documents are **BSON** — binary JSON. It looks like JSON when you print
+it, but it's a binary format with real types, which JSON doesn't have: `int32`, `int64`, `double`,
+`decimal128`, `Date`, `ObjectId`, binary blobs, plus the usual arrays and nested documents. The
+`decimal128` type matters more than it sounds — you can't store money in a float.
+
+Being binary and length-prefixed also means a driver can skip over a field it doesn't need
+without parsing it, which is why BSON exists at all instead of just storing JSON text.
+
+A document is capped at **16 MB**. That limit is a design signal: if a document keeps growing
+without bound — an ever-appending array of events, say — you've modelled it wrong.
+
+### `_id`
+
+Every document has an `_id`, and it's unique within the collection. Supply your own or let the
+server generate an `ObjectId`, which is 12 bytes: a 4-byte timestamp, 5 random bytes, and a 3-byte
+counter. The timestamp prefix means `ObjectId`s sort roughly by creation time, which is
+occasionally handy and occasionally a trap when you assume it's exact.
+
+### There is no schema (until you add one)
+
+Two documents in the same collection can have completely different fields. Nothing stops you:
+
+```
+   users
+   +--------------------------------------------------+
+   | { _id: 1, name: "Sai", email: "sai@..." }         |
+   | { _id: 2, name: "Ana", phone: "+91...",           |
+   |            address: { city: "Pune" } }            |   different fields
+   | { _id: 3, name: "Lee", email: 42 }                |   different types!
+   +--------------------------------------------------+
+```
+
+This is genuinely useful while a schema is still moving, and it's a foot-gun in production, which
+is why MongoDB added **schema validation**: attach a JSON-Schema-ish rule to a collection and the
+server rejects writes that don't match. Flexible by default, strict when you ask.
+
+### The one real modelling decision: embed or reference
+
+Almost every MongoDB design argument reduces to this. Take an order and its line items:
+
+```
+   EMBED                                REFERENCE
+   ------------------------------       -------------------------------
+   orders                               orders
+   { _id: 7,                            { _id: 7, user: 3 }
+     user: 3,
+     items: [                           order_items
+       { sku:"A1", qty:2 },             { _id: 91, order: 7, sku:"A1" }
+       { sku:"B4", qty:1 }              { _id: 92, order: 7, sku:"B4" }
+     ] }
+
+   one read gets everything             two reads, or a $lookup
+   items can't be queried alone         items are independent documents
+   bounded by the 16 MB limit           unbounded
+```
+
+The rule of thumb is *data that is read together should be stored together*. Embed when the child
+data is owned by the parent, always fetched with it, and bounded in size. Reference when it's
+shared between parents, queried on its own, or grows without limit — comments on a viral post
+being the classic case where embedding blows up.
+
+## Talking to it
+
+The shell is `mongosh`, and the same operations exist in every driver. Inserting:
+
+```javascript
+db.users.insertOne({ name: "Sai", email: "sai@example.com", age: 29 })
+db.users.insertMany([ { name: "Ana" }, { name: "Lee" } ])
+```
+
+Queries are themselves documents — you describe the shape you want to match, which takes a minute
+to get used to if you're coming from SQL strings:
+
+```javascript
+db.users.find({ age: 29 })                       // equality
+db.users.find({ age: { $gt: 25, $lte: 40 } })    // operators
+db.users.find({ tags: "premium" })               // matches inside an array
+db.users.find({ "address.city": "Pune" })        // dot notation into a nested doc
+db.users.find({ age: { $gt: 25 } }, { name: 1 }) // second arg projects fields
+```
+
+Two things there are worth pausing on. `tags: "premium"` matches a document whose `tags` array
+*contains* that value — arrays are searched element-wise without you asking. And dot notation
+reaches into nested documents at any depth, so nesting doesn't cost you queryability.
+
+Updates name the operator explicitly, which prevents the classic accident of replacing a whole
+document when you meant to touch one field:
+
+```javascript
+db.users.updateOne({ _id: 1 }, { $set:  { email: "new@example.com" } })
+db.users.updateOne({ _id: 1 }, { $inc:  { loginCount: 1 } })
+db.users.updateOne({ _id: 1 }, { $push: { tags: "beta" } })
+db.users.deleteOne({ _id: 1 })
+```
+
+For anything analytical there's the **aggregation pipeline**: documents flow through stages, each
+transforming the stream. It's `GROUP BY` and friends, written as a list:
+
+```javascript
+db.orders.aggregate([
+  { $match:  { status: "paid" } },                        // filter
+  { $group:  { _id: "$user", total: { $sum: "$amount" } } }, // group and sum
+  { $sort:   { total: -1 } },                             // order
+  { $limit:  10 }
+])
+```
+
+```
+   orders --> [$match] --> [$group] --> [$sort] --> [$limit] --> results
+              filter       reduce      order       cut
+```
+
+`$lookup` is the stage that does a left outer join, for when you referenced instead of embedded.
+
+Indexes work the way you'd expect, and `explain()` tells you whether one was used — a collection
+scan on a large collection is the usual answer to "why is this slow":
+
+```javascript
+db.users.createIndex({ email: 1 })            // 1 ascending, -1 descending
+db.users.createIndex({ city: 1, age: -1 })    // compound
+db.users.find({ email: "sai@example.com" }).explain("executionStats")
+```
+
+From application code it's the same operations through a driver. In Python with `pymongo`:
+
+```python
+from pymongo import MongoClient
+
+db = MongoClient("mongodb://localhost:27017")["shop"]
+db.users.insert_one({"name": "Sai", "age": 29})
+for u in db.users.find({"age": {"$gt": 25}}):
+    print(u["name"])
+```
+
+## How a cluster is put together
+
+Everything above works against a single `mongod` on your laptop. Production adds two layers, and
+they're independent of each other — you can have either, or both.
+
+**A replica set** is copies of the same data for durability and failover. One primary takes the
+writes, secondaries replicate from it by tailing the primary's oplog, and if the primary dies the
+remaining members hold an election:
+
+```
+                 writes                reads (optional)
+                    |                         |
+                    v                         v
+             +-------------+
+             |   PRIMARY   |
+             +-------------+
+               |          |    oplog replication
+               v          v
+        +-----------+  +-----------+
+        | SECONDARY |  | SECONDARY |
+        +-----------+  +-----------+
+
+   primary dies -> surviving members elect a new one
+```
+
+This is where `writeConcern` and `readPreference` come in: `{ w: "majority" }` means a write isn't
+acknowledged until a majority of members have it, which is what makes it survive a failover.
+
+**Sharding** is the other axis: splitting one collection across machines so it no longer has to
+fit on one. You pick a **shard key**, MongoDB divides the key range into **chunks**, and each
+chunk lives on some shard. Clients never talk to shards directly — they talk to `mongos`, the
+router, which consults the config servers to learn which shard holds which chunk:
+
+```
+                        application
+                             |
+                             v
+                     +---------------+          +------------------+
+                     |     mongos    | <------> |  config servers  |
+                     |    (router)   |  chunk   |  (metadata; also |
+                     +---------------+  map     |  a replica set)  |
+                       /      |      \          +------------------+
+                      v       v       v
+              +--------+ +--------+ +--------+
+              | shard1 | | shard2 | | shard3 |    each shard is itself
+              | chunks | | chunks | | chunks |    a replica set
+              | A-F    | | G-P    | | Q-Z    |
+              +--------+ +--------+ +--------+
+```
+
+Two consequences worth internalising early. A query that includes the shard key goes to exactly
+one shard; a query without it is scatter-gather across all of them, so the shard key choice
+decides your performance more than any index will. And when one shard accumulates more chunks
+than the others, a background **balancer** moves chunks around to even things out.
+
+That last sentence is where the rest of this post starts.
+
 ## Nobody proves rebalancing is bug-free
 
-This was my first question and I want to lead with the honest answer, because it's the one that
-surprised me: they don't prove it. Not the implementation, anyway. What distributed databases
+Moving a chunk from one shard to another, live, while the cluster keeps serving traffic, is the
+hardest thing in that diagram. So how does anyone convince themselves it works? I want to lead
+with the honest answer, because it's the one that surprised me: they don't prove it. Not the implementation, anyway. What distributed databases
 actually do is combine careful protocol design, strong invariants, an enormous amount of
 automated testing, and years of production hardening. Even after all of that, distributed
 databases still ship bugs occasionally.
