@@ -199,6 +199,95 @@ for u in db.users.find({"age": {"$gt": 25}}):
     print(u["name"])
 ```
 
+## How indexing actually works
+
+Look back at that `find({ tags: "premium" })` above and ask the obvious question: does MongoDB
+open every document and scan its `tags` array? Without an index, yes — that's a `COLLSCAN`, every
+document examined, and it's exactly as slow as you'd fear. The interesting part is what an index
+does about it, and the array case has a genuinely neat answer.
+
+### Arrays: the multikey index
+
+When you index a field that holds arrays, you get a **multikey index**: MongoDB writes one index
+entry *per distinct array element*, and every entry points back to the same document.
+
+```
+   documents                                index on { tags: 1 }
+                                            (keys kept sorted)
+
+   { _id: 7, tags: ["premium","beta"] }       "beta"     -> rec 7
+   { _id: 9, tags: ["beta"] }        ====>    "beta"     -> rec 9
+   { _id: 4, tags: ["premium"] }              "premium"  -> rec 4
+                                              "premium"  -> rec 7
+```
+
+The array has been flattened into the index. So the query isn't "search inside each array" at
+all — it's an ordinary equality seek to the key `"premium"`, the same operation as looking up
+`age: 29`. You descend the tree once, land on a contiguous run of `"premium"` entries, and read
+off the record ids. That's O(log n) plus the number of matches, instead of a pass over the whole
+collection.
+
+This also explains a bit of MongoDB syntax that otherwise looks like a wart. `{ tags: "premium" }`
+means "the field equals `premium` **or** is an array containing `premium`", and that double
+meaning is precisely what lets one index serve both cases. You never declare an index as
+multikey either — the server marks it so the first time it sees an array in that field. Repeated
+values inside a single array only produce one entry, so `["beta","beta"]` is indexed once.
+
+### The other queries in that list
+
+The range query `{ age: { $gt: 25, $lte: 40 } }` gets compiled into *index bounds*, here
+`(25, 40]`. Because the keys are stored in sorted order, the server seeks to the first key past 25
+and walks forward until it passes 40 — one descent plus a sequential read of exactly the matching
+stretch. That ability to answer a range with one seek is the reason indexes are trees and not
+hash tables, and it's what the [B-tree section](#the-storage-engine-and-why-b-trees) below is
+really about.
+
+`{ "address.city": "Pune" }` needs nothing special: `createIndex({ "address.city": 1 })` stores
+the value found at that path as the key, so nesting costs you nothing. The trap is the
+neighbouring form. `createIndex({ address: 1 })` indexes the *whole subdocument* as a single key,
+which then only matches an exact whole-object comparison, field order included. Index the path
+you actually filter on, not its parent.
+
+The projection in `find({ age: { $gt: 25 } }, { name: 1 })` doesn't change the lookup by itself.
+But build a compound index on `{ age: 1, name: 1 }` and write the projection as
+`{ name: 1, _id: 0 }`, and the query becomes **covered** — everything it needs is already in the
+index, so the documents are never touched at all.
+
+### What actually runs
+
+An index entry holds a key and a record id, not the document, so the usual plan has two stages:
+
+```
+   IXSCAN   seek to the key, walk the range   -> record ids
+      |
+      v
+   FETCH    look each record id up in         -> documents
+      |     the collection storage
+      v
+   SORT / LIMIT / PROJECTION
+```
+
+`explain("executionStats")` reports `totalKeysExamined` and `totalDocsExamined` next to
+`nReturned`, and reading those three together is the whole skill. Roughly equal is healthy. Docs
+examined far above rows returned means the index narrowed badly and the `FETCH` stage is throwing
+most of its work away. A covered query skips `FETCH` entirely and reports `totalDocsExamined: 0`.
+
+### What multikey costs
+
+Flattening arrays into the index isn't free, and the bill comes due in a few places. A document
+with a hundred tags writes a hundred index entries, so index size tracks *total array elements*
+rather than document count — one more reason unbounded arrays are a modelling smell. A compound
+index can only have one array-valued field per document, because indexing two arrays together
+would mean storing their cross product. Sorting on a multikey field usually falls back to an
+in-memory sort, since one document appears at several points in the index and the scan has to
+de-duplicate record ids, which destroys the free ordering an index normally gives you. Covered
+queries work only when the array field itself isn't returned, as the index stores elements
+separately and can't reconstruct the original array. And a multikey index can be neither a shard
+key index nor hashed.
+
+None of that argues against multikey indexes — it argues for keeping arrays bounded, indexing the
+path you filter on, and letting `explain()` settle arguments instead of intuition.
+
 ## How a cluster is put together
 
 Everything above works against a single `mongod` on your laptop. Production adds two layers, and
