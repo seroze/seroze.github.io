@@ -2513,16 +2513,50 @@ fn takes_string(s: &String) { /* only accepts &String */ }
 
 Same rule for slices: prefer `&[T]` over `&Vec<T>` in signatures, since `&Vec<T>` coerces to `&[T]` but not the reverse. This is why idiomatic Rust signatures are full of `&str` and `&[T]` — the borrowed view is strictly more general than the owned container.
 
-The coercion also fires on method calls, which is why `Box<T>` and `Rc<T>` feel transparent:
+One limit to keep in mind: coercion only goes in the direction `Deref` defines. `&String → &str` is free; going the other way costs an allocation and you have to ask for it explicitly with `.to_string()` or `.to_owned()`.
+
+### The same rule drives field and method access
+
+Coercion at a call site is the visible half. The other half fires every time you touch a field or call a method through a smart pointer, and that's the half that makes shared mutable structures readable. Take the standard shape from the interior-mutability section:
 
 ```rust
-let boxed = Box::new(String::from("hi"));
-println!("{}", boxed.len());  // Box<String> → String, which has .len()
+struct Node {
+    next: RefCell<Option<Rc<Node>>>,
+}
+
+let a = Rc::new(Node { next: RefCell::new(None) });
+
+*a.next.borrow_mut() = Some(b);
 ```
 
-Rust keeps dereferencing until it finds a type that has the method. That chain is what makes smart pointers pleasant to use instead of a wall of `*` characters.
+Stop on `a.next` for a second, because it has no business working. `a` isn't a `Node` — its type is `Rc<Node>`, and `next` lives one layer further in. If `Rc` were an ordinary struct you'd have to say so by hand:
 
-One limit to keep in mind: coercion only goes in the direction `Deref` defines. `&String → &str` is free; going the other way costs an allocation and you have to ask for it explicitly with `.to_string()` or `.to_owned()`.
+```rust
+(*a).next
+```
+
+`a` is an `Rc<Node>`, `*a` is a `Node`, and only a `Node` has a `next`. But `Rc<T>` implements `Deref`:
+
+```rust
+impl<T> Deref for Rc<T> {
+    type Target = T;
+    fn deref(&self) -> &T { /* ... */ }
+}
+```
+
+which tells the compiler how to take that step on your behalf. Meeting `a.next`, it works through a short list:
+
+1. Does `Rc<Node>` have a field named `next`? No.
+2. Can I dereference `Rc<Node>`? Yes — it implements `Deref`.
+3. Ask the same question of `Node`. It has `next`. Done.
+
+So the expression you wrote is `a.next` and the expression that compiles is `(*a).next`. The loop repeats as many times as it takes, too: given an `Rc<Box<Node>>`, `x.next` resolves to `(*(*x)).next` without complaint.
+
+Method calls take exactly the same path, which is why `a.next.borrow_mut()` needs no punctuation either — Rust keeps dereferencing the receiver until it reaches a type that has a `borrow_mut`.
+
+The one `*` still written by hand in that snippet is the leading one in `*a.next.borrow_mut() = Some(b)`, and it's worth knowing why it survived. That isn't auto-deref failing; it's a deliberate dereference of the `RefMut` guard so the assignment lands *through* it, on the `Option` inside. Auto-deref inserts itself when Rust is hunting for a field or a method — not on the left-hand side of an `=`.
+
+The rule in one line: if a type implements `Deref`, Rust will insert as many dereferences as it takes to resolve a field access or a method call. That's the whole reason `Box<T>`, `Rc<T>`, `Arc<T>`, `Ref`/`RefMut` and `MutexGuard` feel transparent rather than like a wall of `*` characters.
 
 ## `Deref` vs. `AsRef`
 
