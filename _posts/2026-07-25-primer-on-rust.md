@@ -2606,6 +2606,112 @@ let bytes        = AsRef::<[u8]>::as_ref(&s);  // spelled out explicitly
 
 If you actually need multiple "deref-like views", the idiomatic pattern is to pick your one `Deref::Target` to be the most fundamental representation (usually `str` if you're wrapping a `String`-like type) and implement `AsRef` for any additional views. That mirrors what std itself does: `String` implements `Deref<Target = str>` — one canonical target — but `AsRef<str>`, `AsRef<[u8]>`, and `AsRef<OsStr>` all simultaneously.
 
+## `Box<T>`: one owner, on the heap
+
+Now that `Deref` is in hand, `Box` is easy to describe: it's the simplest smart pointer in the language, and `*b` works on it for exactly the reason the last two sections spelled out.
+
+First, a naming question worth settling. `Box` is a generic **struct** in `std`, not a primitive type — `Box<i32>` is a type instantiated from it, the same way `Vec<i32>` is. So "`Box<T>` is a smart pointer" and "`Box` is a generic struct" are both right; "`Box` is a primitive type" isn't. It does get some help from the compiler, which we'll get to, but there's nothing keyword-ish about it.
+
+```rust
+let x = Box::new(42);
+```
+
+```
+stack                     heap
++---------+              +------+
+| pointer | -----------> |  42  |
++---------+              +------+
+```
+
+The value lives on the heap; the `Box` itself is one pointer wide and lives wherever the variable lives. That's the entire idea.
+
+### It owns what it points to
+
+A `Box` is not a borrow. It owns the heap value, moves like any other owned value, and frees the allocation when it drops:
+
+```rust
+let a = Box::new(5);
+let b = a;      // ownership moves; `a` is no longer usable
+                // heap value freed when `b` goes out of scope
+```
+
+No `free`, no destructor to remember — `Drop` runs automatically at the end of the scope. Single owner, which is the distinction from `Rc<T>` (several owners, one thread) and `Arc<T>` (several owners, several threads) that showed up in the interior-mutability section.
+
+### `*b` and the auto-deref
+
+`Box<T>` implements `Deref<Target = T>` and `DerefMut`, so everything from the previous two sections applies to it directly:
+
+```rust
+let x = Box::new(5);
+println!("{}", *x);        // 5 — Deref::deref, then the *
+
+let s = Box::new(String::from("hello"));
+println!("{}", s.len());   // Box<String> → String → .len()
+```
+
+That's the general rule worth internalising: `*ptr` is not a built-in operation on some blessed set of pointer types. Outside of plain references and raw pointers, `*` on any value is a call to `Deref::deref` (or `DerefMut::deref_mut` where a mutation needs it). If a type supports `*`, someone implemented `Deref` for it — that's true of `Box`, `Rc`, `Arc`, `Ref`, `MutexGuard`, and every smart pointer you'll write yourself.
+
+`Box` does get one privilege the others don't: you can move the value *out* through the dereference.
+
+```rust
+let boxed = Box::new(String::from("hello"));
+let owned: String = *boxed;   // moves out, frees the box — only Box can do this
+```
+
+Try that with an `Rc` and you get "cannot move out of dereference", because the other owners would be left pointing at nothing. `Box` knows it's the only owner, so the compiler special-cases it.
+
+### What it's actually for
+
+Three reasons come up over and over.
+
+**Recursive types**, the classic one. This doesn't compile:
+
+```rust
+enum List {
+    Cons(i32, List),   // ❌ recursive type has infinite size
+    Nil,
+}
+```
+
+To lay out `List` the compiler has to know how big it is, and that definition says "an `i32` plus a `List`" all the way down. A `Box` cuts the recursion, because a pointer's size is known no matter what's on the other end:
+
+```rust
+enum List {
+    Cons(i32, Box<List>),
+    Nil,
+}
+```
+
+Same trick for tree nodes: `left: Option<Box<Node>>`.
+
+**Trait objects.** A `dyn Trait` is unsized — the whole point is that the concrete type isn't known — so it can't be stored in a variable directly. Putting it behind a pointer gives it a size again:
+
+```rust
+let items: Vec<Box<dyn Display>> = vec![
+    Box::new(5),
+    Box::new("hi"),
+    Box::new(3.5),
+];
+```
+
+`Box<dyn Error>` in return types is the same pattern, and it's why `Result<T, Box<dyn Error>>` is the usual signature for "this can fail and I don't want to enumerate how" in application code.
+
+**Large values you'd rather not move around.** Passing a struct by value copies its bytes; passing a `Box` copies one pointer.
+
+```rust
+struct Big { data: [u8; 100_000] }
+
+let x = Box::new(Big { data: [0; 100_000] });   // moves are now 8 bytes
+```
+
+Be a little skeptical of this one in the naive form above — `Box::new` takes its argument by value, so a debug build will typically build the `Big` on the stack and then copy it to the heap. Release builds usually elide that, but if the value is genuinely enormous the reliable fix is to construct it in place (e.g. build a `Vec` and box that) rather than trusting the optimizer.
+
+### Where the compiler helps
+
+Mostly `Box` is an ordinary struct you could nearly write yourself, but it isn't *only* library code. Beyond the move-out-of-`*b` privilege above, the compiler knows a boxed recursive type is sized, and it performs unsized coercions on it — `Box<String>` to `Box<dyn Display>`, `Box<[T; 3]>` to `Box<[T]>` — which no user-defined pointer type gets to do without nightly features.
+
+In one sentence: `Box<T>` is a generic smart-pointer struct that owns a heap-allocated value, hands it out through `Deref`, and frees it when it drops.
+
 ## Error propagation and `?`
 
 Rust has no exceptions. A function that can fail returns `Result<T, E>` — either `Ok(value)` or `Err(error)` — and the caller has to deal with both arms. Done by hand, that gets verbose fast:
