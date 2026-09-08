@@ -2146,7 +2146,66 @@ The blanket version is less typing and picks up user-defined numeric types for f
 
 ## Interior mutability
 
-`Cell<T>`, `RefCell<T>` and `OnceCell<T>` all let you mutate through a `&T` instead of a `&mut T`. All three wrap `UnsafeCell` underneath, all three are `!Sync`. The difference is how they keep aliasing safe.
+Rust's default deal is simple: `&T` means read-only. If all you hold is a shared reference you can't change what's behind it, and the optimizer is allowed to assume nobody else will either.
+
+Sometimes that's too strict. `Cell<T>`, `RefCell<T>` and `OnceCell<T>` all let you mutate through a `&T` anyway. All three wrap `UnsafeCell` underneath, all three are `!Sync`. The difference is what each one does to keep aliasing honest.
+
+### The problem, concretely
+
+Here's the smallest program that hits the wall:
+
+```rust
+struct Counter {
+    count: i32,
+}
+
+impl Counter {
+    fn increment(&self) {
+        self.count += 1;
+    }
+}
+```
+
+```
+error[E0594]: cannot assign to `self.count`, which is behind a `&` reference
+```
+
+The obvious fix is `&mut self`, and most of the time that's the right answer. But sometimes you can't have it. Maybe the object is already shared:
+
+```rust
+let config = Config::new();
+let a = &config;
+let b = &config;
+```
+
+Two live shared references means nobody can take a `&mut`, ever — that's the aliasing rule, not a technicality. And yet perhaps the only thing that needs to change is a cache-hit counter buried in one field. Or you're implementing a trait whose method signature takes `&self` and you don't get a vote. Or you're inside a `Fn` closure rather than an `FnMut` one.
+
+`Cell` is what you reach for then:
+
+```rust
+use std::cell::Cell;
+
+struct Counter {
+    count: Cell<i32>,
+}
+
+impl Counter {
+    fn increment(&self) {
+        self.count.set(self.count.get() + 1);
+    }
+
+    fn value(&self) -> i32 {
+        self.count.get()
+    }
+}
+
+let c = Counter { count: Cell::new(0) };
+c.increment();
+c.increment();
+assert_eq!(c.value(), 2);
+```
+
+Still `&self`, and the counter moves. The mental model: `&T` normally means read-only, and a `Cell` field carves out one small mutable box inside an otherwise shared object.
 
 ### `Cell`: move values in and out
 
@@ -2160,7 +2219,9 @@ let old = c.replace(7); // works for non-Copy too
 let owned = c.take();   // requires T: Default
 ```
 
-The catch is no in-place mutation. To modify a `Cell<Vec<i32>>` you take it out, push, and set it back.
+The `Copy` bound on `get()` looks arbitrary until you ask what `Cell::<String>::get()` would do. The `String` stays in the cell and you also get one back: two owners of one heap allocation, two eventual frees. So `get()` is restricted to types where copying the bytes really is the whole story. Non-`Copy` types are still perfectly good cell contents — they just have to *leave* rather than be duplicated, via `replace`, `take` or `swap`.
+
+The other catch is no in-place mutation. To modify a `Cell<Vec<i32>>` you take it out, push, and set it back.
 
 ### `RefCell`: real references, checked at runtime
 
@@ -2175,7 +2236,40 @@ let _a = rc.borrow();
 let _b = rc.borrow_mut();  // panics: already borrowed
 ```
 
-Costs a word of storage plus a branch per borrow, and violations panic at runtime instead of failing to compile. `try_borrow` / `try_borrow_mut` return a `Result` if you'd rather handle it.
+Conceptually the counter walks through three states. It starts unborrowed; each `borrow()` bumps it to shared-with-*n*-readers; `borrow_mut()` is only allowed from unborrowed and moves it to exclusive. Ask for an exclusive borrow while two readers are alive and there's no legal answer, so it panics:
+
+```
+thread 'main' panicked at 'already borrowed: BorrowMutError'
+```
+
+Costs a word of storage plus a branch per borrow, and violations panic at runtime instead of failing to compile. `try_borrow` / `try_borrow_mut` return a `Result` if you'd rather handle it than fall over.
+
+### Wait — isn't borrow checking a compile-time thing?
+
+It is, for real references. `let a = &mut x; let b = &mut x;` is a compile error: no runtime state, no cost, no way to get it wrong.
+
+`RefCell` doesn't get that, and the reason isn't that rustc is weak. From the compiler's point of view `RefCell` is an ordinary library type:
+
+```rust
+pub struct RefCell<T> {
+    value: UnsafeCell<T>,
+    borrow: Cell<isize>,   // roughly
+}
+```
+
+`borrow()` is a normal method call that reads and writes a normal integer field. Nothing in the language says that field *means* "borrow state" — that meaning lives entirely inside the implementation. The borrow checker reasons about `&` and `&mut`, and Rust deliberately keeps it that way; the alternative is a compiler that has to understand the semantics of every library type anyone ever writes.
+
+And even if it did understand `RefCell`, the question is frequently unanswerable:
+
+```rust
+let cell = RefCell::new(10);
+let a = cell.borrow();
+maybe_modify(&cell, user_clicked_button());  // takes borrow_mut() if the flag is set
+```
+
+Whether that panics depends on a button. Same story for a recursive function that only calls `borrow_mut()` at depth 5, or a `borrow_mut()` sitting after a loop that may never terminate — deciding "can these two borrows overlap?" in general means deciding whether the loop halts, which Turing showed in 1936 that no algorithm can do. The number of paths isn't really the obstacle: one branch on runtime input is already enough.
+
+So there are two options. Reject every program you can't prove safe, and lose a pile of correct ones. Or check while running. `RefCell` picks the second, and the price is a word of storage, a compare-and-branch per borrow, and a panic where you'd have preferred a compiler error.
 
 |  | `Cell` | `RefCell` | `OnceCell` |
 |---|---|---|---|
@@ -2186,7 +2280,56 @@ Costs a word of storage plus a branch per borrow, and violations panic at runtim
 
 Rule of thumb: `Cell` first for `Copy` scalars, it's strictly cheaper and can't blow up. `RefCell` when you need to operate on the value in place, which is why `Rc<RefCell<T>>` is the standard shape for shared mutable graphs.
 
-If you hold a `&mut Cell<T>` or `&mut RefCell<T>`, both have `get_mut()`, which is free and statically checked. The runtime machinery only exists on the shared path. Thread-safe analogues are `Mutex` / `RwLock`.
+If you hold a `&mut Cell<T>` or `&mut RefCell<T>`, both have `get_mut()`, which is free and statically checked. The runtime machinery only exists on the shared path.
+
+### Across threads: `Mutex` and `RwLock`
+
+None of the above is thread-safe, and not by oversight. Picture two threads calling `borrow_mut()` on the same `RefCell`: both read the flag as unborrowed, both conclude they're clear, both write "exclusive", and now two threads hold a `&mut` to the same value. That's a data race — precisely what the whole type system exists to rule out.
+
+Rust's answer is to make it not compile. `Cell` and `RefCell` are `!Sync`, so they can't be shared across threads at all:
+
+```rust
+let x = RefCell::new(5);
+thread::spawn(move || {
+    println!("{}", *x.borrow());
+});
+```
+
+```
+error[E0277]: `RefCell<i32>` cannot be shared between threads safely
+```
+
+The thread-safe versions live in `std::sync` and are shaped the same way — a guard you hold, and a release that happens when it drops:
+
+```rust
+use std::sync::{Mutex, RwLock};
+
+let m = Mutex::new(5);
+{
+    let mut v = m.lock().unwrap();  // guard, much like RefMut
+    *v += 1;
+}                                   // unlocked here, on drop
+
+let rw = RwLock::new(5);
+let r = rw.read().unwrap();         // many readers at once
+drop(r);
+let w = rw.write().unwrap();        // or one writer, exclusive
+```
+
+`Mutex` is one-at-a-time. `RwLock` is `borrow`/`borrow_mut` promoted to threads: any number of readers, or a single writer. Reach for `Mutex` by default and `RwLock` only when reads genuinely dominate — it's the heavier lock, and a read-mostly workload can still lose the theoretical win to the extra bookkeeping.
+
+Why not just give `RefCell` an atomic counter and call it thread-safe? Because detecting the conflict was never the hard part. Make the flag an `AtomicIsize`, let two threads race for exclusive access, and the atomic will reliably tell the loser it lost. Then what? It can't proceed, and it can't reasonably panic — both threads were following the rules. It needs to *wait*. That's what a lock adds on top of the atomic: the memory ordering that makes the previous holder's writes visible when you acquire, and a way to block until your turn. (`lock()` returns a `Result` for one reason: if a thread panicked mid-update while holding it, the data may be half-written, so the lock is poisoned and everyone afterwards is told.)
+
+The progression is worth holding in your head:
+
+|  | Checked | Cost | Failure mode |
+|---|---|---|---|
+| `&T` / `&mut T` | compile time | none | won't compile |
+| `Cell<T>` | nothing to check | none | none |
+| `RefCell<T>` | runtime, one thread | flag + branch | panics |
+| `Mutex` / `RwLock` | runtime, across threads | lock, and blocking | blocks; can deadlock |
+
+For a lone `Copy` scalar shared between threads, skip the locks and use an atomic (`AtomicUsize` and friends) — it plays the role `Cell` plays single-threaded. And when the shared value needs shared *ownership* as well, the pairs are `Rc<RefCell<T>>` on one thread and `Arc<Mutex<T>>` across several.
 
 ### `OnceCell`: write once, then it's frozen
 
