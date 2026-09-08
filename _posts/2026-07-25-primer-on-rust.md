@@ -2144,6 +2144,90 @@ where
 
 The blanket version is less typing and picks up user-defined numeric types for free — someone's fixed-point or big-integer type becomes a `Number` the moment it satisfies the bounds. The cost is that you've given up control of the membership: every qualifying type is a `Number` whether you meant it or not, and because the blanket impl already covers them, nobody — including you — can write a manual `impl Number for MyType` afterwards without a coherence error. Listing the primitives by hand keeps the set deliberate and closed, which is usually what a library wants.
 
+## Rust's aliasing rules
+
+The next few sections lean on this constantly, so it's worth pinning down.
+
+*Aliasing* simply means multiple references pointing at the same memory.
+
+```rust
+let mut x = 10;
+
+let a = &x;
+let b = &x;
+```
+
+```
+        x
+        │
+      +----+
+      | 10 |
+      +----+
+      ▲    ▲
+      │    │
+      a    b
+```
+
+That's aliasing. Rust's fundamental rule about it is:
+
+> Many immutable references, **or** one mutable reference. Never both at the same time.
+
+```
+✔ &T, &T, &T, &T
+✔ &mut T
+✘ &T and &mut T simultaneously
+✘ two &mut T simultaneously
+```
+
+Often summarised as *exclusive mutation, shared reading*.
+
+### Why the rule exists
+
+Suppose Rust allowed this:
+
+```rust
+let mut x = 5;
+
+let a = &x;
+let b = &mut x;
+
+println!("{}", *a);
+*b = 100;
+println!("{}", *a);
+```
+
+What should `a` see — `5` then `100`, or `5` then `5`, or something else?
+
+The compiler wants freedom to optimise. When it sees `let a = &x;` it assumes nobody can mutate `x` while `a` exists, so it's free to cache `*a` in a register:
+
+```
+register = 5
+
+println(register);
+
+*b = 100;
+
+println(register);
+```
+
+That prints `5` and `5`, even though memory now holds `100`. The optimisation is only correct because the language guarantees the mutation can't happen. So the rule is really a promise to the optimiser: **if an immutable reference exists, nobody may mutate the value.** (This is the `noalias` guarantee that comes up again in the `UnsafeCell` section below.)
+
+Two mutable references are worse still:
+
+```rust
+let mut x = 0;
+
+let a = &mut x;
+let b = &mut x;
+
+*a += 1;
+*b += 1;
+```
+
+Which one runs first? Rust refuses to answer the question — it just says there can be only one mutable reference.
+
+Everything in the next section is about bending this rule without breaking it. `RefCell`, in particular, enforces exactly the same rule; it just checks it while the program is running instead of while it compiles.
+
 ## Interior mutability
 
 Rust's default deal is simple: `&T` means read-only. If all you hold is a shared reference you can't change what's behind it, and the optimizer is allowed to assume nobody else will either.
@@ -2768,6 +2852,245 @@ Be a little skeptical of this one in the naive form above — `Box::new` takes i
 Mostly `Box` is an ordinary struct you could nearly write yourself, but it isn't *only* library code. Beyond the move-out-of-`*b` privilege above, the compiler knows a boxed recursive type is sized, and it performs unsized coercions on it — `Box<String>` to `Box<dyn Display>`, `Box<[T; 3]>` to `Box<[T]>` — which no user-defined pointer type gets to do without nightly features.
 
 In one sentence: `Box<T>` is a generic smart-pointer struct that owns a heap-allocated value, hands it out through `Deref`, and frees it when it drops.
+
+## `Rc<T>` and `Arc<T>`: many owners
+
+`Box` is one owner. When a value genuinely needs several — a node reachable from two places in a graph, a config every part of the program holds on to — you want a reference-counted pointer instead.
+
+```rust
+use std::rc::Rc;
+
+let a = Rc::new(String::from("hello"));
+let b = Rc::clone(&a);      // count is now 2, nothing was copied
+
+println!("{}", Rc::strong_count(&a));   // 2
+```
+
+`Rc::clone` doesn't clone the `String`; it bumps a counter and hands back another pointer to the same allocation. Each `Rc` that drops decrements the count, and the value is freed when it hits zero. Like `Box`, `Rc<T>` implements `Deref<Target = T>`, so `a.len()` works and everything from the autoderef section applies.
+
+What you *don't* get is mutation. `Rc` only ever lends out `&T` — with several owners around, handing out a `&mut T` would break the aliasing rule outright. That's why `Rc<RefCell<T>>` is such a common pairing: `Rc` for the shared ownership, `RefCell` for the mutation, each doing one job.
+
+`Arc<T>` is the same thing with an atomic counter, for when the owners are on different threads. The `A` is for *atomic*, not *async*. It's slightly slower than `Rc` because incrementing the count has to be an atomic operation, which is the whole reason both types exist rather than just the safe one.
+
+### Why `Arc<RefCell<T>>` doesn't compile
+
+This is the trap everyone hits once:
+
+```rust
+use std::sync::Arc;
+use std::cell::RefCell;
+
+let x = Arc::new(RefCell::new(0));
+let y = Arc::clone(&x);
+
+std::thread::spawn(move || {
+    *y.borrow_mut() += 1;       // ❌ doesn't compile
+});
+```
+
+The important thing to remember is that **`Arc` only solves ownership across threads. It does not make the contents thread-safe.**
+
+Go through the types one at a time. `x` is an `Arc<RefCell<i32>>`. `Arc::clone(&x)` creates another `Arc` pointing at the same `RefCell`. Then `thread::spawn` moves that `Arc<RefCell<i32>>` into another thread.
+
+`thread::spawn` requires that everything captured by the closure is `Send`, so `Arc<RefCell<i32>>` has to be `Send`. And `Arc` is thread-safe only if its contents are:
+
+```rust
+impl<T: Send + Sync> Send for Arc<T> {}
+```
+
+Notice it requires `T: Sync`, not just `T: Send`. Why? Because multiple threads can dereference the same `Arc` simultaneously:
+
+```
+Thread A        Thread B
+
+Arc ─┐          Arc ─┐
+     ▼               ▼
+     RefCell<i32>
+```
+
+Both threads end up holding a `&RefCell<i32>` to the same cell — and "`&T` can be shared across threads" is precisely what `Sync` means.
+
+So: is `RefCell<i32>` `Sync`? No. Recall what it stores:
+
+```
+value       = 0
+borrow flag = 0
+```
+
+`borrow_mut()` moves that flag from `0` to `-1`, and dropping the borrow moves it back. Those updates are ordinary integer reads and writes. Two threads at once:
+
+```
+Thread A                Thread B
+
+read flag = 0
+                        read flag = 0
+write -1
+                        write -1
+
+both think they own the mutable borrow
+```
+
+The borrow flag itself has a data race, and Rust's aliasing rules are broken — two live `&mut` to the same `i32`. `RefCell` performs no synchronisation whatsoever, so `RefCell<T>` is `!Sync`. Therefore `Arc<RefCell<i32>>` is `!Send`, and `thread::spawn` won't take it:
+
+```
+error[E0277]: `RefCell<i32>` cannot be shared between threads safely
+    = help: the trait `Sync` is not implemented for `RefCell<i32>`
+```
+
+The fix is to replace the borrow bookkeeping with real synchronisation:
+
+```rust
+use std::sync::{Arc, Mutex};
+
+fn main() {
+    let x = Arc::new(Mutex::new(0));
+    let y = Arc::clone(&x);
+
+    let handle = std::thread::spawn(move || {
+        *y.lock().unwrap() += 1;
+    });
+
+    handle.join().unwrap();
+
+    println!("{}", *x.lock().unwrap());   // 1
+}
+```
+
+`Mutex` lets only one thread mutate the value at a time, which makes `Mutex<T>` `Sync` (given `T: Send`), which makes `Arc<Mutex<T>>` safe to share. `Arc<RwLock<T>>` works the same way when reads dominate.
+
+| Type | Interior mutability? | Thread-safe? | Typical use |
+|---|---|---|---|
+| `Cell<T>` | yes, by moving values in and out | no | single-threaded, `Copy` types |
+| `RefCell<T>` | yes, with runtime borrow checks | no | single-threaded |
+| `Rc<T>` | no — shared ownership only | no | single-threaded |
+| `Arc<T>` | no — shared ownership only | yes, the count only | multi-threaded |
+| `Mutex<T>` | yes, via locking | yes | multi-threaded |
+| `RwLock<T>` | yes, many readers or one writer | yes | multi-threaded |
+
+The common source of confusion is thinking "`Arc` makes anything inside it thread-safe." It doesn't. `Arc` only makes the *reference counting* atomic; the safety of the contained value is still `T`'s responsibility. `Rc<RefCell<T>>` on one thread, `Arc<Mutex<T>>` across several.
+
+### `Rc::make_mut`: copy-on-write
+
+Since `Rc` won't lend you a `&mut T`, how do you ever change the value? One answer is `Rc::make_mut`, which uses a neat trick called copy-on-write. It asks a single question: *am I the only owner?*
+
+If yes, there's nobody to disturb, so it just hands you a `&mut T`:
+
+```rust
+let mut x = Rc::new(String::from("hello"));   // strong_count == 1
+
+Rc::make_mut(&mut x).push_str(" world");      // no clone, no allocation
+```
+
+If no, mutating in place would be visible to the other owners, so it clones the value first and points your `Rc` at the fresh copy:
+
+```rust
+let mut a = Rc::new(String::from("hello"));
+let b = Rc::clone(&a);
+
+Rc::make_mut(&mut a).push_str(" world");
+
+println!("{}", a);   // hello world
+println!("{}", b);   // hello
+```
+
+Before, both pointed at one allocation:
+
+```
+a ----\
+       \
+        ▼
+     "hello"
+        ▲
+       /
+b -----/
+```
+
+`make_mut` saw a count of 2, cloned, and left `b` where it was:
+
+```
+a ---> "hello world"
+
+b ---> "hello"
+```
+
+**Why not just always clone?** Because you'd pay for it even when nobody was sharing. Written by hand the eager version is:
+
+```rust
+let mut b = (*a).clone();   // always clones, even at count 1
+b.push_str(" world");
+```
+
+Now imagine an `Rc<Vec<u8>>` holding 500 MB, where 99% of the time there's a single owner. Cloning first means allocate 500 MB, copy 500 MB, mutate — every time, for nothing. `make_mut` allocates and copies only in the rare shared case. Hence the name: you pay for the copy only when there's actually another owner's view to preserve.
+
+The other half of the appeal is that the caller doesn't have to know whether the `Rc` is shared. `make_mut` means "I want mutable access; if I'm unique don't waste time copying, and if I'm not, preserve the other owners" — and it works that out itself. Picture an image editor holding `Rc<Image>`: open the same image in a second tab and an edit forks the pixels, but with one tab open the edit is in place and free.
+
+Two details worth knowing: `make_mut` needs `T: Clone` (obviously), and it also clones if any `Weak` references are outstanding, not just strong ones. If you'd rather not clone at all, `Rc::get_mut` returns `Option<&mut T>` — `Some` when unique, `None` otherwise. `Arc::make_mut` and `Arc::get_mut` are identical.
+
+### `Rc::try_unwrap`: getting the value back out
+
+`Rc::try_unwrap` is for when you want the owned `T` back out of the `Rc` — but only if you're the last owner.
+
+```rust
+pub fn try_unwrap(this: Rc<T>) -> Result<T, Rc<T>>
+```
+
+It consumes the `Rc` and returns `Ok(T)` if the count was 1, or `Err(Rc<T>)` if other owners still exist.
+
+Why can't you just write `let s = *x;`? Because the allocation might be owned by someone else too:
+
+```
+x ----\
+       \
+        ▼
+     "hello"
+        ▲
+       /
+y -----/
+```
+
+If `*x` moved the `String` out, `y` would be left pointing at nothing. So Rust forbids moving `T` out of an `Rc<T>` in general, and `try_unwrap` is the checked way to ask for it anyway:
+
+```rust
+let x = Rc::new(String::from("hello"));
+
+let s = Rc::try_unwrap(x).unwrap();   // count was 1 — the String is moved out
+println!("{}", s);
+```
+
+No cloning, no allocation: the `Rc` disappears and the `String` itself comes back. With a second owner around it fails instead:
+
+```rust
+let x = Rc::new(String::from("hello"));
+let y = Rc::clone(&x);
+
+match Rc::try_unwrap(x) {
+    Ok(s)   => println!("got {s}"),
+    Err(rc) => println!("still shared: {rc}"),   // this arm
+}
+```
+
+The `Err` arm is why the signature returns `Result<T, Rc<T>>` rather than `Result<T, ()>`: `try_unwrap` consumed your `Rc`, so on failure it has to hand it back or you'd have lost it.
+
+The usual pattern is building something with shared ownership and then collapsing it at the end, once you know the other references are gone:
+
+```rust
+let rc = build_graph();
+// ... lots of shared ownership ...
+drop(other_references);
+
+let graph = Rc::try_unwrap(rc).unwrap();   // now a plain Graph
+```
+
+From there you own a `Graph` instead of an `Rc<Graph>` and can move it around with no reference counting at all.
+
+It's worth being clear about how this differs from `make_mut`, since both start by asking "am I unique?":
+
+| Method | Gives you | If there are multiple owners |
+|---|---|---|
+| `Rc::make_mut(&mut rc)` | `&mut T` | clones `T` (copy-on-write) |
+| `Rc::try_unwrap(rc)` | `T` | returns `Err(Rc<T>)`, no clone |
+
+`make_mut` says "I need mutable access, and cloning to get it is fine." `try_unwrap` says "I want the original value — if I can't have it without cloning, don't clone, just tell me." Which makes `try_unwrap` free when it succeeds: it takes ownership of the existing `T` without copying or allocating anything.
 
 ## Error propagation and `?`
 
