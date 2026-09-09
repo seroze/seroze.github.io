@@ -2396,6 +2396,13 @@ fn print_all<I: Iterator<Item = String>>(iter: I) {
 }
 ```
 
+![Quiz: how do you write a function bound requiring I to be an Iterator whose Item is String? The correct answer is fn foo<I: Iterator<Item = String>>(iter: I), because Item is an associated type rather than a generic parameter of the trait]({{ site.baseurl }}/assets/images/associated-type-bound-quiz.svg)
+
+If you've done any Rust flashcards you've probably met this one, and the three wrong answers
+are wrong in three instructive ways — passing `String` positionally to a trait that has no
+positional slot, applying it to `I` as though `I` were the generic thing, and using a bare
+trait name where a type belongs.
+
 `Iterator` has no generic parameters. The `Item = String` inside the angle brackets is an
 **equality constraint**: it doesn't select a variant of the trait, it narrows the bound to
 those implementors whose `Item` happens to be `String`. Compare the two roles side by side:
