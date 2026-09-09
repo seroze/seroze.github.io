@@ -3095,6 +3095,213 @@ The same thing happens with methods. When you write `a.next.borrow_mut()`, the c
 
 So the rule of thumb is: if a type implements `Deref`, Rust will automatically dereference it for field access (`a.next`) and method calls (`a.foo()`), until it finds the requested field or method. This is why smart pointers like `Box<T>`, `Rc<T>` and `Arc<T>` feel almost transparent to use — you can usually interact with the underlying value as if you had it directly.
 
+### Autoref vs. autoderef
+
+**TL;DR**
+
+> **Autoderef** follows `Deref` to *find* the method — it looks **through** a pointer.
+> **Autoderef** answers "where does this method live?"
+>
+> **Autoref** inserts the `&` or `&mut` to *pass* the receiver — it takes a reference **to**
+> a value. **Autoref** answers "how do I hand the receiver over?"
+>
+> A single method call usually does both, in that order: deref down to the type that owns
+> the method, then ref back up to match its `self`.
+>
+> ```
+> Box<Person>  ──autoderef──▶  Person  ──autoref──▶  &Person  ──▶  greet()
+> ```
+>
+> And the one-line caveat that explains most surprises: **both are method-call features.**
+> `p.greet()` gets them; `greet(p)` gets neither.
+
+The section above covered autoderef. Autoref is the other half, and it's the one that's
+easier to miss — because what it inserts is a character you never typed.
+
+#### The `&` you never wrote
+
+```rust
+struct Person {
+    name: String,
+}
+
+impl Person {
+    fn greet(&self) {
+        println!("Hello {}", self.name);
+    }
+}
+
+let p = Person { name: "Alice".to_string() };
+p.greet();
+```
+
+`p` is a `Person`. But `fn greet(&self)` is shorthand for `fn greet(self: &Person)` — the
+method wants a **`&Person`**, and you handed it a `Person`. The types don't match, and yet it
+compiles, because the compiler rewrites the call:
+
+```rust
+p.greet();          // what you write
+Person::greet(&p);  // what it resolves to
+```
+
+That inserted `&p` is autoref.
+
+#### Why it's easy to miss: normal functions don't do this
+
+Here's the contrast that makes it stick. Same signature, written as a free function:
+
+```rust
+fn greet(p: &Person) {
+    println!("Hello {}", p.name);
+}
+
+greet(p);    // error[E0308]: expected `&Person`, found `Person`
+greet(&p);   // fine — you write the & yourself
+```
+
+The exact same mismatch that Rust silently fixes in `p.greet()` is a hard error in
+`greet(p)`. **Autoref is a method-call feature.** The compiler does not insert `&` into
+arbitrary function calls; it only does it when resolving a `receiver.method(args)`
+expression, because that's the one place it knows what the target wants.
+
+Keep those two lines side by side in your head:
+
+```rust
+person.greet();    // autoref happens
+greet(person);     // it doesn't
+```
+
+#### It inserts `&mut` too
+
+Whichever the method asks for:
+
+```rust
+struct Counter { value: i32 }
+
+impl Counter {
+    fn get(&self) -> i32   { self.value }
+    fn bump(&mut self)     { self.value += 1; }
+}
+
+let mut c = Counter { value: 10 };
+
+c.get();     // → Counter::get(&c)
+c.bump();    // → Counter::bump(&mut c)
+```
+
+This is also why `c` has to be declared `mut`: the autoref for `bump` is a `&mut` borrow, so
+the usual borrow rules apply to a reference you never wrote. When the compiler says "cannot
+borrow `c` as mutable", the borrow it's complaining about is often an invisible one.
+
+#### The two together
+
+Now put a pointer in front of it:
+
+```rust
+let x = Box::new(Person { name: "Alice".into() });
+x.greet();
+```
+
+`x` is a `Box<Person>`. `greet` is defined on `Person`, and wants `&Person`. Two steps:
+
+```
+Box<Person>
+    │  autoderef — Box<T>: Deref<Target = T>, so look inside
+    ▼
+  Person
+    │  autoref — greet wants &self
+    ▼
+ &Person
+```
+
+which is to say `Person::greet(&*x)`. Deref down to find the method, ref back up to call it.
+
+It repeats as far as needed. A `Box<Box<Person>>` derefs twice before the autoref, giving
+`Person::greet(&**x)`. And it's why `String` gets `str`'s methods free:
+
+```rust
+let s = String::from("hello");
+s.is_empty();          // is_empty is on str, not String
+                       // String ──deref──▶ str ──ref──▶ &str
+```
+
+#### The actual algorithm
+
+Worth knowing precisely, because it explains the surprises. For `receiver.method(args)` the
+compiler:
+
+1. Builds a **candidate list** by starting at the receiver's type and dereferencing
+   repeatedly: `Box<Box<Person>>`, `Box<Person>`, `Person`. (An unsized coercion, e.g.
+   `[T; N]` to `[T]`, is appended at the end.)
+2. Walks that list **in order**, and for each candidate type `T` looks for a method taking
+   `T`, then `&T`, then `&mut T` — in that order.
+3. Takes the first hit.
+
+Two consequences fall out of the ordering.
+
+**Earlier in the deref chain wins.** The outermost type is checked first, so a method on
+`Box<T>` would shadow one on `T`. This is exactly why the standard library gives `Box`, `Rc`
+and `Arc` almost no inherent methods, and why the ones they do have are written as associated
+functions — `Rc::clone(&a)`, not `a.clone()`. If `Rc` had an inherent `clone` *method* it
+would shadow `T::clone` for every `T` you ever put in one.
+
+**`&T` is tried before `&mut T`.** So a shared borrow is preferred, and you only get a mutable
+one when nothing else fits.
+
+And the reason to know step 2 at all: it's the mechanism behind the `.clone()` trap from the
+[UFCS section](#one-real-gotcha-it-fixes). With a `&&NotClone` receiver, candidate #1 is
+`&NotClone` — and `&NotClone` *is* `Clone`, because shared references are always `Copy`. The
+search succeeds on the first candidate and stops, so you get a copied reference rather than
+the error you'd want. Nothing went wrong; the algorithm just found a legitimate match earlier
+than you expected.
+
+#### Qualified paths get neither
+
+This is where autoref connects back to [UFCS](#ufcs-which-trait-implementation). Take a
+trait method:
+
+```rust
+trait Container<T> {
+    fn get(&self, index: usize) -> T;
+}
+
+impl Container<i32> for MyBox {
+    fn get(&self, index: usize) -> i32 { /* ... */ }
+}
+```
+
+Called as a method, autoref applies as usual:
+
+```rust
+my_box.get(0);                                  // → <MyBox as Container<i32>>::get(&my_box, 0)
+```
+
+Written as a qualified path, it does not:
+
+```rust
+<MyBox as Container<i32>>::get(0);              // error: this function takes 2 arguments
+                                                //        but 1 argument was supplied
+<MyBox as Container<i32>>::get(&my_box, 0);     // correct
+```
+
+The error is confusing the first time, because you counted one argument and the compiler
+counted two. The missing one is `self` — in path form it's an ordinary first parameter, and
+there's no receiver expression sitting to the left of a dot for the compiler to borrow. You
+pass it yourself, `&` included.
+
+That's the rule worth carrying:
+
+| Form | Autoderef | Autoref |
+|---|---|---|
+| `x.method(args)` | yes | yes |
+| `Type::method(&x, args)` | no | no |
+| `<Type as Trait>::method(&x, args)` | no | no |
+| `f(x)` — a free function | no | no |
+
+Dot syntax is the only place the compiler does this work for you. Every other form is the
+desugared one, where the borrows are yours to write — which is the same reason a qualified
+path is a good debugging tool: it shows you what the dot was hiding.
+
 ## `Deref` vs. `AsRef`
 
 Rust gives you two ways to make a type act like another type — but they're not interchangeable.
