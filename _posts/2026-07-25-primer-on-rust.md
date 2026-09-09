@@ -2220,6 +2220,390 @@ let x: u8 = nums.iter().copied().sum();
 
 Two footnotes. You could drop the `copied()` here entirely: the standard library implements `Sum<&u8> for u8`, so summing references works directly. `copied()` earns its place when later adapters need owned values, or simply when you'd rather read `u8` than `&u8` in the chain. And watch the width — `sum::<u8>()` panics in debug and wraps in release once the total passes 255. Nothing widens on your behalf; sum into `u32` if the input might be large.
 
+### Associated types
+
+`Iterator`'s `type Item;` has shown up twice already without explanation, so here's the
+mechanism on its own.
+
+A trait is a list of items an implementor must supply. Usually those are functions, but they
+don't have to be — a trait can also demand a constant, or a *type*:
+
+```rust
+trait Parser {
+    type Output;
+
+    fn parse(&self, input: &str) -> Result<Self::Output, ParseError>;
+}
+```
+
+The trait doesn't say what `Output` is. It says only that every parser has one, and that
+`parse` returns it. Each impl fills in the blank:
+
+```rust
+struct JsonParser;
+struct CsvParser;
+
+impl Parser for JsonParser {
+    type Output = JsonValue;
+    fn parse(&self, input: &str) -> Result<JsonValue, ParseError> { /* ... */ }
+}
+
+impl Parser for CsvParser {
+    type Output = Vec<Record>;
+    fn parse(&self, input: &str) -> Result<Vec<Record>, ParseError> { /* ... */ }
+}
+```
+
+`Self::Output` in the trait definition is a placeholder that resolves per impl. Forget the
+`type Output = ...;` line in an impl and the compiler tells you exactly that: *not all trait
+items implemented, missing: `Output`*.
+
+#### Naming one from outside
+
+Inside the trait you write `Self::Output`. Outside, you write it against whatever type you
+have in hand:
+
+```rust
+fn run<P: Parser>(p: &P, s: &str) -> Result<P::Output, ParseError> {
+    p.parse(s)
+}
+```
+
+`P::Output` is the whole point of the feature. `run` doesn't know or care what the parser
+produces, but it can still name the type in its own signature and hand it back to the caller
+concretely — call `run(&JsonParser, s)` and you get a `Result<JsonValue, ParseError>`, not
+some opaque thing you have to unwrap through a second type parameter.
+
+When `P::Output` is ambiguous — `P` implements two traits that both have an `Output` — fall
+back to the qualified form from the [UFCS section](#ufcs-which-trait-implementation), which
+works for types exactly as it does for methods:
+
+```rust
+<P as Parser>::Output
+```
+
+#### Putting a bound on it
+
+You can constrain the associated type where you declare it. This says *whatever you pick for
+`Item`, it has to be cloneable and printable*:
+
+```rust
+trait Container {
+    type Item: Clone + std::fmt::Debug;
+
+    fn get(&self, i: usize) -> Option<Self::Item>;
+}
+```
+
+An impl that sets `type Item` to something without those bounds is rejected right there, at
+the impl — not later, at some distant call site. And the payoff is that generic code over
+`Container` gets the bounds for free:
+
+```rust
+fn print_first<C: Container>(c: &C) {
+    if let Some(item) = c.get(0) {
+        println!("{item:?}");    // works — Item: Debug is guaranteed by the trait
+    }
+}
+```
+
+Note what `print_first` did *not* have to write: no `where C::Item: Debug`. The bound is part
+of the trait's contract, promised once by the trait and relied on by every consumer, rather
+than something each function re-states. That's the trade — you narrow who can implement
+`Container` in order to widen what you can do with one.
+
+
+#### Or bound it later, on the method that needs it
+
+A trait-level bound like `type Item: Clone + Debug` is a demand on *everyone*. Sometimes only
+one method needs the guarantee, and making it a condition of implementing the trait at all is
+too strong. Put the bound on that method instead:
+
+```rust
+use std::fmt::Display;
+
+trait Shape {
+    type Unit;
+
+    fn area(&self) -> Self::Unit;
+
+    fn describe(&self) -> String
+    where
+        Self::Unit: Display,
+    {
+        format!("Area is {}", self.area())
+    }
+}
+```
+
+`describe` is a default method — it comes free with the trait — and it doesn't know or care
+what `Unit` concretely is. It only needs it printable, and it says so locally rather than
+taxing the trait's declaration.
+
+```rust
+struct Circle { radius: f64 }
+
+impl Shape for Circle {
+    type Unit = f64;
+
+    fn area(&self) -> Self::Unit {
+        3.14 * self.radius * self.radius
+    }
+}
+
+struct PixelRectangle { width: i32, height: i32 }
+
+impl Shape for PixelRectangle {
+    type Unit = i32;
+
+    fn area(&self) -> Self::Unit {
+        self.width * self.height
+    }
+}
+
+fn main() {
+    let circle = Circle { radius: 5.0 };
+    let rectangle = PixelRectangle { width: 10, height: 20 };
+
+    println!("{}", circle.describe());       // Area is 78.5
+    println!("{}", rectangle.describe());    // Area is 200
+}
+```
+
+Neither impl mentions `Display`. Both get `describe` anyway, because `f64` and `i32` happen to
+satisfy the clause at the call site.
+
+The difference from the trait-level bound is worth holding onto, because it's a difference in
+*when the check happens*. A bound on the declaration is checked at the impl: pick a `Unit`
+that isn't `Display` and the impl itself fails. A `where` clause on a method is checked at the
+call: the impl compiles fine, and you simply can't call `describe` on it. So a
+`Shape` whose `Unit` is some opaque non-printable measurement is still a perfectly good
+`Shape` — it just doesn't get that one method.
+
+That's the general shape of the choice. Bound the declaration when the guarantee is part of
+what the trait *means*; bound the method when it's an extra one method happens to want.
+#### Pinning it at the use site: `Trait<Assoc = Type>`
+
+This is the syntax the post has been using for a while — `Iterator<Item = String>`,
+`Add<Output = T>` — and it's worth being precise about, because it *looks* like a generic
+argument and isn't one.
+
+```rust
+fn print_all<I: Iterator<Item = String>>(iter: I) {
+    for s in iter {
+        println!("{s}");
+    }
+}
+```
+
+`Iterator` has no generic parameters. The `Item = String` inside the angle brackets is an
+**equality constraint**: it doesn't select a variant of the trait, it narrows the bound to
+those implementors whose `Item` happens to be `String`. Compare the two roles side by side:
+
+```rust
+fn a<T: From<i32>>(x: T) {}                    // From<i32> — i32 is an input, part of
+                                               // the trait's identity
+fn b<I: Iterator<Item = String>>(i: I) {}      // Item = String — a constraint on the
+                                               // one Iterator impl I already has
+```
+
+Both live inside `<>`, which is why they get conflated. The `=` is the tell. And a
+constraint like this is *not* the only way to use the trait — `fn c<I: Iterator>(i: I)`
+accepts every iterator; adding `Item = String` just narrows the set.
+
+Since Rust 1.79 you can also bound the associated type inline, without naming it exactly:
+
+```rust
+fn shout<I: Iterator<Item: Display>>(iter: I) { /* ... */ }
+```
+
+which before then had to be spelled out longhand as a second clause:
+
+```rust
+fn shout<I>(iter: I)
+where
+    I: Iterator,
+    I::Item: Display,
+{ /* ... */ }
+```
+
+The longhand still works and is often clearer once you have more than one such bound.
+
+
+#### Chaining: bounds on an associated type's associated type
+
+Once you can name `I::Item`, you can bound it — and the thing you bound it with may itself
+have an associated type, which you can constrain in the same breath:
+
+```rust
+fn sum_squares<I>(iter: I) -> i32
+where
+    I: Iterator,
+    I::Item: std::ops::Mul<Output = i32> + Copy,
+{
+    iter.map(|x| x * x).sum()
+}
+```
+
+Read the second clause left to right. `I::Item` reaches through `I`'s `Iterator` impl to name
+what it yields. That type must implement `Mul`, and `Mul`'s *own* associated `Output` must be
+`i32` — which is what makes `x * x` an `i32` and lets `sum()` add them into the declared return
+type. `Copy` is there because `x * x` uses `x` twice.
+
+So `sum_squares` accepts an iterator of `i32`, or of any custom `Meters` type that multiplies
+into a plain `i32`, and rejects an iterator of `String` — all without a single concrete item
+type in the signature. This is the everyday reason associated types are worth the trouble:
+each one is a name you can hang further requirements on, and they nest as deep as you need.
+#### More than one
+
+Nothing says a trait gets only one. A trait describing a graph needs two blanks filled in,
+because a graph is defined by both what its nodes are and what its edges are:
+
+```rust
+trait Graph {
+    type Node;
+    type Edge;
+
+    fn edges(&self, node: &Self::Node) -> Vec<Self::Edge>;
+}
+
+struct CityMap;
+
+impl Graph for CityMap {
+    type Node = String;
+    type Edge = (String, String, u32);   // (from, to, distance)
+
+    fn edges(&self, node: &String) -> Vec<(String, String, u32)> {
+        vec![(node.clone(), "NextCity".to_string(), 42)]
+    }
+}
+```
+
+Both are outputs of the same choice: pick `CityMap` and you've picked cities-as-strings *and*
+distance-weighted edges together. Had these been generic parameters, `Graph<String, (String,
+String, u32)>` and `Graph<u32, (u32, u32, f64)>` would be different traits that `CityMap` could
+implement both of, and `fn shortest_path<G: Graph>(g: &G)` would need to thread two extra type
+parameters through every signature to say what it's walking over. With associated types it
+just writes `G::Node` and `G::Edge`.
+
+Notice too that the impl writes the concrete types in `edges`' signature — `&String`, not
+`&Self::Node`. Either spelling compiles; once `type Node = String;` is fixed, they're the
+same type. Writing them out is usually clearer in an impl, and `Self::Node` is usually
+clearer in the trait.
+
+#### Both mechanisms in one trait: `Add`
+
+The standard library's `Add` is the cleanest real example of a generic parameter and an
+associated type living side by side, each doing the job the other can't:
+
+```rust
+trait Add<Rhs = Self> {
+    type Output;
+
+    fn add(self, rhs: Rhs) -> Self::Output;
+}
+```
+
+And in use:
+
+```rust
+use std::ops::Add;
+
+#[derive(Debug, Clone, Copy)]
+struct Point { x: f64, y: f64 }
+
+impl Add for Point {
+    type Output = Point;
+
+    fn add(self, rhs: Point) -> Point {
+        Point { x: self.x + rhs.x, y: self.y + rhs.y }
+    }
+}
+
+impl Add<f64> for Point {
+    type Output = Point;
+
+    fn add(self, scalar: f64) -> Point {
+        Point { x: self.x + scalar, y: self.y + scalar }
+    }
+}
+```
+
+Two impls of `Add` for one type, and they don't collide — because `Rhs` is a **generic
+parameter**, part of the trait's identity, so `Add<Point>` and `Add<f64>` are genuinely
+different traits. That's what you want: adding a point to a point and adding a scalar to a
+point are both reasonable, and a type should be allowed to do both.
+
+`Output` is an **associated type** for the opposite reason. Once you've fixed *which* impl
+you're in — `Point + Point`, or `Point + f64` — the result type isn't a free choice any more.
+There's one sensible answer per impl, and each impl states it once.
+
+So read the declaration as two different questions:
+
+```
+trait Add<Rhs = Self> {
+             │
+             └── input: what may I be added to?     several answers → generic parameter
+
+    type Output;
+         │
+         └── output: what falls out?                one answer per impl → associated type
+```
+
+The `= Self` is a default for the parameter, which is why `impl Add for Point` works without
+writing `impl Add<Point> for Point`. That's covered in [its own
+section](#default-type-parameters-and-rhs--self), along with [where the `Add<Output = T>`
+bound comes from](#operator-overloading-and-the-addoutput--t-bound) — and `Output = T` there
+is exactly the equality-constraint syntax from above, applied to this trait.
+
+#### Trait objects have to spell it out
+
+`dyn Trait` is a type, and a type has to be fully known. So a trait object over a trait with
+an associated type won't compile until you say what it is:
+
+```rust
+let it: Box<dyn Iterator> = ...;                  // error: the value of the associated
+                                                  //        type `Item` must be specified
+let it: Box<dyn Iterator<Item = u32>> = ...;      // fine
+```
+
+The reason is the same one that makes `P::Output` useful in the generic case, viewed from the
+other end. A caller holding a `Box<dyn Iterator<Item = u32>>` needs to know that `next()`
+returns `Option<u32>` — that's in the type, not in the vtable. Erase the concrete parser or
+iterator and you can still erase *which* one it is; you can't erase what it produces.
+
+#### Two things it can't (yet) do
+
+An associated type can't have a default in the trait, the way a method can:
+
+```rust
+trait Parser {
+    type Output = String;    // error: associated type defaults are unstable
+}
+```
+
+That's the `associated_type_defaults` feature, still nightly-only. If you want a common case
+to be free, the usual workaround is a blanket impl or a second trait.
+
+The other limit was lifted in Rust 1.65: an associated type can now take its own generic
+parameters and lifetimes, which is what *generic associated types* means.
+
+```rust
+trait Container {
+    type Iter<'a>: Iterator<Item = &'a Self::Item>
+    where
+        Self: 'a;
+
+    type Item;
+
+    fn iter<'a>(&'a self) -> Self::Iter<'a>;
+}
+```
+
+That declares a family of types rather than one, indexed by the lifetime. It's what lets a
+trait return a borrowing iterator tied to `&self` — impossible before, because the associated
+type had to be one fixed type with no way to mention the caller's lifetime. GATs get thorny
+fast and are worth reaching for only when you hit that exact wall.
 ### Why `Item` is an associated type and not a generic parameter
 
 `Iterator` could plausibly have been declared like this:
