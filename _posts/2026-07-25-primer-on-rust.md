@@ -3202,7 +3202,32 @@ let x = Box::new(Person { name: "Alice".into() });
 x.greet();
 ```
 
-`x` is a `Box<Person>`. `greet` is defined on `Person`, and wants `&Person`. Two steps:
+`x` is a `Box<Person>`. `greet` is defined on `Person`, and wants `&Person`. It helps to
+watch the compiler do this in two distinct passes, because they're answering two different
+questions.
+
+**Step 1 — method lookup.** The compiler sees `Box<Person>` and goes looking for a `greet`.
+There isn't one on `Box<Person>`, so it dereferences and looks again:
+
+```
+Box<Person>
+     ↓
+  Person          // found it: Person::greet
+```
+
+That's autoderef, and note what it produced — a *method*, not a receiver. At this point the
+compiler knows which function it's calling and nothing else.
+
+**Step 2 — determine `self`.** Now it reads that method's signature. `greet` takes `&self`,
+which here means `&Person`, and what's on hand is a `Person`. So it takes a reference:
+
+```
+  Person
+     ↓
+ &Person
+```
+
+That's autoref. Stack the two and you get the whole call:
 
 ```
 Box<Person>
@@ -3214,7 +3239,9 @@ Box<Person>
  &Person
 ```
 
-which is to say `Person::greet(&*x)`. Deref down to find the method, ref back up to call it.
+which is to say `Person::greet(&*x)`. Deref down to find the method, ref back up to call it —
+and the clean separation is that autoderef is driven by *where the method lives*, while
+autoref is driven by *what its `self` asks for*. Neither one knows about the other.
 
 It repeats as far as needed. A `Box<Box<Person>>` derefs twice before the autoref, giving
 `Person::greet(&**x)`. And it's why `String` gets `str`'s methods free:
@@ -3224,6 +3251,89 @@ let s = String::from("hello");
 s.is_empty();          // is_empty is on str, not String
                        // String ──deref──▶ str ──ref──▶ &str
 ```
+
+Here's the same thing once more, stripped to nothing so there's no `name` field to distract
+you:
+
+```rust
+struct Person;
+
+impl Person {
+    fn greet(&self) {
+        println!("hello");
+    }
+}
+
+fn main() {
+    let person = Person;
+    let boxed = Box::new(person);
+
+    boxed.greet();
+}
+```
+
+`boxed` is a `Box<Person>`, and the only `greet` in the program is `Person::greet`, which
+wants `&Person`. So the single line `boxed.greet()` is doing this:
+
+```
+                    METHOD LOOKUP
+                         │
+                         ▼
+                    Box<Person>
+                         │
+                     autoderef
+                         ▼
+                      Person
+                         │
+                   found greet()
+                         │
+                         ▼
+                 method wants &self
+                         │
+                      autoref
+                         ▼
+                     &Person
+```
+
+#### Writing the `*` yourself
+
+The useful experiment is to take one of those steps back from the compiler:
+
+```rust
+(*boxed).greet();
+```
+
+Now you've done the dereference by hand, and the picture shortens by a step:
+
+```
+  boxed
+    │
+    │  *  — you wrote this one
+    ▼
+  Person
+    │
+    │  autoref — still the compiler's job
+    ▼
+ &Person
+    │
+    ▼
+  greet()
+```
+
+The autoref doesn't go away. You can hand the compiler a `Person` directly, but you still
+can't hand it the `&Person` that `greet` actually wants — not through dot syntax, anyway. For
+that you'd have to drop to `Person::greet(&*boxed)`, which is the fully desugared form with
+nothing left implicit.
+
+Which is a good moment to separate four words that get used as if they were one thing. **`*`**
+is the syntax for dereferencing explicitly, and it's the only one of the four you ever type.
+**`Deref`** is the trait that defines what dereferencing *means* for a custom type — implement
+it and `*` starts working on yours. **Autoderef** is the compiler inserting those derefs on
+its own while it hunts for a method. **Autoref** is the compiler inserting the `&` or `&mut`
+once it's found one, to match whatever the receiver's `self` asks for.
+
+Keep *autoderef = method lookup* and *autoref = satisfy the `self` type* in your head and
+most of this area stops being mysterious.
 
 #### The actual algorithm
 
