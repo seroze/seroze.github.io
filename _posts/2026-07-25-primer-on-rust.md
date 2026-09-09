@@ -799,7 +799,7 @@ grid[r * cols + c] = 1;
 | Both in one traversal | `fold()` |
 | Iterate with the index | `iter().enumerate()` |
 | Modify every element | `iter_mut()` |
-| Filter in place | `retain(\|x\| ...)` |
+| Filter in place | <code>retain(&#124;x&#124; ...)</code> |
 | Sort | `sort_unstable()` / `sort_by_key()` |
 | Remove duplicates | `sort()` then `dedup()` |
 | Search a sorted slice | `binary_search()` |
