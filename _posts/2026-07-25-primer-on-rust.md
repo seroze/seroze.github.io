@@ -3092,6 +3092,150 @@ It's worth being clear about how this differs from `make_mut`, since both start 
 
 `make_mut` says "I need mutable access, and cloning to get it is fine." `try_unwrap` says "I want the original value — if I can't have it without cloning, don't clone, just tell me." Which makes `try_unwrap` free when it succeeds: it takes ownership of the existing `T` without copying or allocating anything.
 
+### `Weak<T>`: a pointer that doesn't own
+
+The shortest way to say it: `Rc<T>` owns a value, and `Weak<T>` points at a value without keeping it alive.
+
+That matters as soon as your data structure has cycles in it — the classic one being a parent that holds its children and children that want to point back at their parent.
+
+```rust
+use std::rc::{Rc, Weak};
+
+struct Node {
+    value: i32,
+    parent: Weak<Node>,
+    children: Vec<Rc<Node>>,
+}
+
+fn main() {
+    let parent = Rc::new(Node {
+        value: 10,
+        parent: Weak::new(),
+        children: Vec::new(),
+    });
+
+    let child = Rc::new(Node {
+        value: 20,
+        parent: Rc::downgrade(&parent),
+        children: Vec::new(),
+    });
+
+    println!("parent strong count = {}", Rc::strong_count(&parent));
+    println!("parent weak count   = {}", Rc::weak_count(&parent));
+
+    // Weak doesn't give direct access to the Node.
+    // We have to "upgrade" it to an Rc.
+    if let Some(parent_rc) = child.parent.upgrade() {
+        println!("parent value = {}", parent_rc.value);
+    }
+}
+```
+
+The line doing the work is `Rc::downgrade(&parent)`. It turns an owning handle:
+
+```
+Rc<Node>
+   |
+   v
+┌───────────┐
+│ Node      │
+│ value: 10 │
+└───────────┘
+```
+
+into a non-owning one:
+
+```
+Weak<Node>
+   |
+   |  "I know where it is,
+   |   but I don't own it."
+   v
+┌───────────┐
+│ Node      │
+│ value: 10 │
+└───────────┘
+```
+
+So why not just use `Rc<Node>` for the parent link as well? Suppose we did:
+
+```rust
+struct Node {
+    value: i32,
+    parent: Option<Rc<Node>>,
+    children: Vec<Rc<Node>>,
+}
+```
+
+Now the parent owns the child through `children`:
+
+```
+parent Rc
+   ↓
+ child Rc
+```
+
+and the child owns the parent right back through `parent`:
+
+```
+parent Rc
+   ↑
+ child Rc
+```
+
+which is a cycle:
+
+```
+parent → child → parent → child → ...
+```
+
+Neither count ever reaches zero, so neither node is ever freed. That's a leak — safe Rust, no undefined behaviour, memory gone anyway. With `Weak` on the way up, only one direction counts:
+
+```
+parent
+  │
+  │ Rc
+  ↓
+child
+  │
+  │ Weak
+  └────────→ parent
+```
+
+Only the `Rc` edge keeps anything alive, so dropping the parent actually drops it.
+
+The other thing to know about `Weak` is that you can't read through it directly. This doesn't compile:
+
+```rust
+child.parent.value
+```
+
+because a `Weak<Node>` carries no guarantee that the `Node` is still there. You have to ask first:
+
+```rust
+if let Some(parent) = child.parent.upgrade() {
+    println!("{}", parent.value);
+}
+```
+
+`upgrade()` means "if the object is still alive, give me an `Rc` to it", and its return type says exactly that:
+
+```
+Weak<Node>
+    │
+    │ upgrade()
+    ↓
+Option<Rc<Node>>
+    │
+    ├── Some(Rc)  → object still alive
+    │
+    └── None      → object was dropped
+```
+
+The mental model that makes all of this stick is a short one. `Rc<T>` is "I own this." `Weak<T>` is "I know about this, but I don't own it." Which is why `Weak` is the right tool for parent pointers in trees, graphs, observer relationships, caches, and anywhere else an `Rc` cycle would otherwise form.
+
+One subtle point worth stating outright: a `Weak` doesn't keep anything alive. Once the last `Rc` goes, the value is dropped even if a pile of `Weak`s are still pointing at where it used to be — and every `upgrade()` from then on returns `None`.
+
 ## Error propagation and `?`
 
 Rust has no exceptions. A function that can fail returns `Result<T, E>` — either `Ok(value)` or `Err(error)` — and the caller has to deal with both arms. Done by hand, that gets verbose fast:
