@@ -3,7 +3,7 @@ layout: post
 title: "Primer in Python"
 date: 2026-07-09 00:00:00 +0530
 categories: python
-tags: [python, typing, protocols, descriptors, generators, concurrency]
+tags: [python, typing, protocols, descriptors, generators, concurrency, data_structures]
 author: "Seroze"
 published: true
 ---
@@ -135,6 +135,382 @@ data = sys.stdin.buffer.read().split()      # ~4x faster, one syscall
 The cost scales with **line count, not bytes**: on a 1000×1000 grid all three take ~2ms, but on 200k lines of two ints it's 0.31s vs 0.15s vs 0.08s. So use `input()` for a few thousand lines, `sys.stdin.buffer.read().split()` at 10⁵+ tokens, and `input = sys.stdin.readline` as the habit that's never wrong.
 
 One trap: `.buffer` gives you `bytes`, and indexing bytes yields an **int**, so `row[j] == '#'` is silently always `False` — `.decode()` the rows, or compare against `b'#'[0]`.
+
+## Collections
+
+Most Python programs are a thin layer of logic over four containers: `list`, `dict`, `set`
+and `tuple`. Everything else in this section — `deque`, `heapq`, `bisect`,
+`sortedcontainers` — exists because one of those four has a bad worst case for the
+operation you happen to need in a loop.
+
+The mental model that keeps it straight: a `list` is a growable array of pointers, a `dict`
+and a `set` are open-addressed hash tables, a `deque` is a doubly linked list of fixed-size
+blocks, a heap is an array pretending to be a tree, and a `SortedList` is a list of small
+lists with an index on top. Every complexity below falls out of those five shapes.
+
+### `list`
+
+A dynamic array. Indexing and appending are cheap; anything that touches the front is not,
+because every element after the insertion point has to shift.
+
+| Method | Cost | Notes |
+|---|---|---|
+| `a[i]`, `a[i] = v` | `O(1)` | |
+| `a.append(x)` | `O(1)` amortised | occasional realloc, but averages out |
+| `a.pop()` | `O(1)` | from the end |
+| `a.pop(i)` | `O(n)` | shifts the tail left |
+| `a.insert(i, x)` | `O(n)` | `insert(0, x)` is the classic accidental quadratic |
+| `a.remove(x)` | `O(n)` | scans for the *first* `==` match, raises `ValueError` if absent |
+| `x in a` | `O(n)` | the reason `set` exists |
+| `a.index(x)` | `O(n)` | takes optional `start`, `stop` |
+| `a.count(x)` | `O(n)` | |
+| `a.extend(it)`, `a += it` | `O(k)` | consumes any iterable |
+| `a.sort()` | `O(n log n)` | **in place, returns `None`** |
+| `a.reverse()` | `O(n)` | in place |
+| `a.copy()`, `a[:]` | `O(n)` | shallow — see [Shallow vs deep copy](#shallow-vs-deep-copy) |
+| `a.clear()` | `O(n)` | |
+
+Two things people trip over. First, `a.sort()` returns `None`, so `b = a.sort()` gives you
+`None` and silently destroys the ordering you had; `sorted(a)` is the one that returns a new
+list. Second, `sort` is *stable* — equal keys keep their relative order — which is what makes
+multi-key sorting by repeated passes work:
+
+```python
+rows.sort(key=lambda r: r.name)      # secondary key first
+rows.sort(key=lambda r: r.score, reverse=True)   # primary key last wins
+```
+
+`key` is called exactly once per element (unlike the long-dead `cmp`), so an expensive key
+function is fine. For a descending sort on one field and ascending on another, either negate
+a numeric field (`key=lambda r: (-r.score, r.name)`) or do the two-pass trick above — `reverse=True`
+applies to the whole tuple, so you can't mix directions inside a single `key`.
+
+### `tuple`
+
+Immutable, so it only has `count` and `index`. Its real job is being *hashable*, which is
+what lets it be a `dict` key or a `set` element — but only if everything inside it is
+hashable too. A tuple containing a list is not hashable; see
+[Tuples don't freeze what they contain](#tuples-dont-freeze-what-they-contain).
+
+### `collections.deque`
+
+A double-ended queue. `O(1)` push and pop at *both* ends, which is exactly what `list`
+can't do at the front.
+
+```python
+from collections import deque
+
+q = deque([1, 2, 3])
+q.append(4)         # right
+q.appendleft(0)     # left
+q.pop()             # right
+q.popleft()         # left       <- the BFS workhorse
+q.extendleft([a, b])  # note: reverses the iterable
+q.rotate(1)         # right by 1; rotate(-1) rotates left
+```
+
+The tradeoff is indexing: `q[k]` is `O(min(k, n-k))` because it has to walk the block list,
+so a `deque` is a bad random-access container. There's no slicing at all.
+
+`maxlen` gives you a fixed-size sliding window that drops from the far end automatically:
+
+```python
+last5 = deque(maxlen=5)
+for x in stream:
+    last5.append(x)     # oldest element silently discarded once full
+```
+
+Use it for BFS queues, sliding-window minimum (store indices, pop from both ends), and
+"keep the last N" buffers. Anywhere you wrote `lst.pop(0)` in a loop, this is the fix.
+
+### `set` and `frozenset`
+
+A hash table with no values. Membership, add and discard are `O(1)` average — worst case
+`O(n)` under adversarial hash collisions, which is a real concern in competitive programming
+where someone may have crafted the test against Python's integer hash.
+
+```python
+s.add(x)                      # add one
+s.update(it)          s |= t  # add many
+s.remove(x)                   # KeyError if absent
+s.discard(x)                  # silent if absent
+s.pop()                       # remove an arbitrary element; KeyError when empty
+
+s.union(t)                    s | t
+s.intersection(t)             s & t
+s.difference(t)               s - t
+s.symmetric_difference(t)     s ^ t
+s.issubset(t)                 s <= t          # s.issuperset(t) is s >= t
+s.isdisjoint(t)                               # no operator form
+```
+
+The method forms accept *any iterable* while the operator forms require an actual set:
+`s.union([1, 2])` works, `s | [1, 2]` raises `TypeError`. Every operator also has an in-place
+form (`&=`, `-=`, `^=`) and a matching `_update` method.
+
+A set is unordered — iteration order is an artifact of hash values and insertion history,
+not something to rely on. `frozenset` is the immutable, hashable version, which is what you
+need when the elements of a set are themselves sets.
+
+### `dict`
+
+Also a hash table, and since 3.7 **insertion-ordered by language guarantee** (it was already
+true in 3.6 as a CPython implementation detail).
+
+| Method | What it does |
+|---|---|
+| `d[k]` | raises `KeyError` if absent |
+| `d.get(k, default)` | returns `default` (which itself defaults to `None`) instead of raising |
+| `d.setdefault(k, v)` | get-or-insert, returns the value either way |
+| `d.pop(k, default)` | remove and return |
+| `d.popitem()` | remove and return the **last** inserted pair — LIFO since 3.7 |
+| `d.update(other)` | merge in place, from a dict or an iterable of pairs |
+| `d.keys()`, `.values()`, `.items()` | live *views*, not copies |
+| `d.copy()` | shallow copy |
+| `dict.fromkeys(it, v)` | build from keys — careful, all keys share **one** `v` |
+
+Python 3.9 added merge operators, which `update` predates:
+
+```python
+merged = d1 | d2      # new dict; d2 wins on conflicting keys
+d1 |= d2              # in place, same as d1.update(d2)
+```
+
+The views are worth knowing: they reflect later mutations, and `d.keys()` and `d.items()`
+support set operations (`d.keys() & other.keys()` gives the common keys). `d.values()` does
+not, because values needn't be hashable.
+
+The `fromkeys` trap is the same one as [default arguments](#default-arguments-are-evaluated-once):
+`dict.fromkeys(range(3), [])` gives three keys pointing at *the same list*.
+
+Mutating a dict while iterating it raises `RuntimeError`. Iterate over `list(d)` if you plan
+to delete.
+
+**`collections.defaultdict`** takes a zero-argument factory and calls it on missing lookups:
+
+```python
+from collections import defaultdict
+graph = defaultdict(list)
+graph[u].append(v)         # no "if u not in graph" dance
+```
+
+The trap is that *reading* a missing key inserts it. `if graph[x]:` on an unseen `x` quietly
+grows the dict, which matters if you later iterate it or check `len`. Use `graph.get(x)` when
+you only want to look.
+
+**`collections.Counter`** is a dict subclass for multisets:
+
+```python
+from collections import Counter
+c = Counter("mississippi")
+c["s"]                 # 4
+c["z"]                 # 0 — missing keys return 0 and are NOT inserted
+c.most_common(2)       # [('i', 4), ('s', 4)] — ties broken by insertion order
+c.total()              # 11  (3.10+)
+c1 + c2, c1 - c2       # add/subtract counts; subtraction drops non-positives
+c1 & c2, c1 | c2       # min and max of counts
+c.elements()           # iterator repeating each key by its count
+```
+
+`c - c2` dropping zero and negative counts is the surprise; `c.subtract(c2)` mutates in place
+and *keeps* negatives.
+
+**`collections.OrderedDict`** still has two things plain `dict` doesn't: `move_to_end(k, last=True)`
+and order-sensitive `==`. Two `OrderedDict`s with the same pairs in different orders are unequal;
+two plain dicts are equal. `move_to_end` plus `popitem(last=False)` is the standard LRU cache.
+
+### `heapq` — a min-heap, always
+
+**`heapq` is a min-heap. There is no max-heap and no `reverse=` parameter.** `heap[0]` is
+always the smallest element by `<`.
+
+```python
+import heapq
+
+h = []
+heapq.heappush(h, x)          # O(log n)
+smallest = heapq.heappop(h)   # O(log n), removes and returns h[0]
+peek = h[0]                   # O(1), no function needed
+heapq.heapify(a)              # O(n) — in place, turns a list into a heap
+heapq.heappushpop(h, x)       # push then pop, one sift
+heapq.heapreplace(h, x)       # pop then push, one sift — errors on empty heap
+heapq.nlargest(k, it, key=…)  # O(n log k)
+heapq.nsmallest(k, it, key=…)
+heapq.merge(*sorted_iterables)  # lazy k-way merge, returns an iterator
+```
+
+`heapify` being `O(n)` rather than `O(n log n)` is worth remembering: building a heap from a
+list you already have is cheaper than pushing elements one at a time.
+
+`heappushpop` and `heapreplace` differ only in order, and that changes the answer. For a
+"keep the k largest" loop, `heappushpop` is the right one — it can return the element you
+just pushed, so the heap never grows past `k`:
+
+```python
+for x in stream:
+    if len(h) < k:
+        heapq.heappush(h, x)
+    else:
+        heapq.heappushpop(h, x)   # h holds the k largest, h[0] is the k-th largest
+```
+
+**Getting a max-heap.** Negate on the way in and on the way out:
+
+```python
+heapq.heappush(h, -x)
+largest = -heapq.heappop(h)
+```
+
+For non-numeric data, push `(-priority, item)` tuples, or wrap the item in a class with a
+reversed `__lt__`. There is no built-in.
+
+**The tuple tie-break trap.** Tuples compare lexicographically, so when two priorities are
+equal, Python moves on and compares the *second* element. If that's an object with no
+ordering, you get a `TypeError` at some unpredictable point mid-run:
+
+```python
+heapq.heappush(h, (5, task_a))
+heapq.heappush(h, (5, task_b))   # TypeError: '<' not supported between Task instances
+```
+
+The fix is a monotonic tie-breaker in the middle:
+
+```python
+import itertools
+counter = itertools.count()
+heapq.heappush(h, (priority, next(counter), task))   # ties break FIFO, never touches `task`
+```
+
+**No decrease-key.** `heapq` can't update the priority of an element already in the heap, so
+Dijkstra in Python is written with *lazy deletion*: push the improved distance as a new entry,
+and when you pop, skip any entry whose distance is stale.
+
+```python
+while h:
+    d, u = heapq.heappop(h)
+    if d > dist[u]:      # stale entry left over from an earlier, worse push
+        continue
+    ...
+```
+
+The heap can hold up to `E` entries instead of `V`, which costs memory but keeps everything
+`O(1)`-ish per operation. Don't try to `remove()` from a heap — that's `O(n)` and breaks the
+invariant unless you re-heapify.
+
+Finally, `heapq` operates on a plain `list`, so `len(h)`, `h[0]` and truthiness all work
+directly. Only `h[0]` is meaningful — the rest of the array is in heap order, not sorted
+order.
+
+### `bisect` — binary search on a sorted list
+
+The list must already be sorted **ascending**. `bisect` doesn't check, and on unsorted input
+it returns nonsense rather than raising.
+
+Both functions return an *insertion index*, and the difference is only about where they place
+a value **equal** to existing elements:
+
+- `bisect_left(a, x)` — the leftmost position where `x` could go: the index of the **first**
+  element `>= x`. Equivalently, the number of elements strictly less than `x`.
+- `bisect_right(a, x)` (alias `bisect`) — the rightmost such position: the index of the
+  **first** element `> x`. Equivalently, the number of elements `<= x`.
+
+```python
+from bisect import bisect_left, bisect_right, insort
+
+a = [1, 3, 3, 3, 5]
+bisect_left(a, 3)    # 1  — first index where a[i] >= 3
+bisect_right(a, 3)   # 4  — first index where a[i] > 3
+bisect_left(a, 4)    # 4  } for a value not present,
+bisect_right(a, 4)   # 4  } the two agree
+```
+
+When `x` is absent the two are identical, which is why the distinction only bites on
+duplicates. Everything you'd want falls out of those two numbers:
+
+```python
+count_of_x   = bisect_right(a, x) - bisect_left(a, x)
+first_ge_x   = bisect_left(a, x)                   # == len(a) if none
+first_gt_x   = bisect_right(a, x)
+last_le_x    = bisect_right(a, x) - 1              # == -1 if none
+last_lt_x    = bisect_left(a, x) - 1               # == -1 if none
+in_range     = bisect_right(a, hi) - bisect_left(a, lo)   # count of lo <= v <= hi
+```
+
+To test membership, you must check the bound before dereferencing — `bisect_left` can return
+`len(a)`:
+
+```python
+i = bisect_left(a, x)
+found = i < len(a) and a[i] == x
+```
+
+**`insort_left` / `insort_right`** find the position and insert. The search is `O(log n)` but
+the insertion is `O(n)` because of the memmove, so building a sorted list by repeated `insort`
+is `O(n²)`. That's fine up to a few tens of thousands of elements — the memmove is a fast C
+loop — and terrible beyond it. If you need real `O(log n)` insertion, that's the next section.
+
+**The `key=` parameter (3.10+)** searches by a computed key, but note the asymmetry: you pass
+the *key value*, not an element.
+
+```python
+rows = sorted(rows, key=lambda r: r.score)
+i = bisect_left(rows, 70, key=lambda r: r.score)    # 70, not a row object
+```
+
+Before 3.10, the standard workaround was a parallel list of keys, or `insort` on `(key, item)`
+tuples — which brings back the tie-break trap from `heapq`.
+
+**Descending lists don't work.** There's no `reverse=`. Either store negated values and negate
+the query, or reverse your index arithmetic by hand. Negating is less error-prone.
+
+### `sortedcontainers` — `SortedList`, `SortedSet`, `SortedDict`
+
+Not in the standard library: `pip install sortedcontainers`. It's pure Python, single file,
+no dependencies, and it's the answer to "Python has no `std::set` / `TreeMap`".
+
+The trick is that it *isn't* a balanced tree. It's a list of lists, each chunk around 1000
+elements, with a cumulative-length index on top. Insertion is `O(sqrt(n))` in theory but the
+work is a `memmove` inside one small chunk, so in practice it beats hand-written red-black
+trees in Python by a wide margin. Treat the operations as "log-ish and fast".
+
+```python
+from sortedcontainers import SortedList, SortedSet, SortedDict
+
+sl = SortedList([5, 1, 3, 3])
+sl.add(2)                # insert, keeps order
+sl.remove(3)             # removes one occurrence, ValueError if absent
+sl.discard(9)            # no error if absent
+sl[0], sl[-1]            # min and max, O(log n) — the killer feature
+sl.pop(0)                # remove by index
+sl.bisect_left(3), sl.bisect_right(3)    # same semantics as the bisect module
+sl.index(3)              # first index of a value
+sl.count(3)              # occurrences
+sl.irange(2, 4)          # iterator over 2 <= v <= 4, inclusive both ends
+sl.islice(0, 5)          # iterator over an index range, without building a list
+```
+
+`SortedList` keeps duplicates; `SortedSet` doesn't, and adds the full set algebra (`|`, `&`,
+`-`, `^`) on top of the ordered indexing. `SortedDict` keeps keys sorted and exposes
+`peekitem(i)`, `bisect_left` over keys, and `irange` — the ordered map you'd reach for in C++.
+
+Where each one wins:
+
+| Need | Reach for |
+|---|---|
+| repeatedly take the minimum, never look at anything else | `heapq` |
+| static sorted data, query only | `bisect` on a plain list |
+| interleaved inserts, deletes, *and* order queries | `SortedList` |
+| k-th smallest element, or "how many below x", as the set changes | `SortedList` (`sl[k]`, `sl.bisect_left(x)`) |
+| ordered map with range scans over keys | `SortedDict` |
+
+The one `heapq` still wins at is a pure priority queue: it's stdlib, it's C, and its constant
+factor is smaller. The moment you need to delete an arbitrary element, look at the maximum, or
+ask for the k-th smallest, `heapq` can't do it and `SortedList` does it in one call.
+
+Two caveats. **Never mutate an element in place while it's in a `SortedList`** — the container
+can't know the sort key changed, and the structure is silently corrupted. And `SortedList`
+sorts with `<`, so a list of mutually incomparable objects raises `TypeError` on the second
+`add`, not the first.
 
 ## `is` vs `==`, small-int caching, and string interning
 

@@ -1412,6 +1412,174 @@ Implementing `Display` also gets you `.to_string()` for free, via a blanket `imp
 
 The rule for error types: implement both. `Debug` for the developer reading a stack trace, `Display` for the message the user sees. `std::error::Error` requires both as supertraits precisely for that reason.
 
+### Why `Vec<i32>` doesn't implement `Display`
+
+Sooner or later you write `println!("{}", v)` on a vector and get:
+
+```
+error[E0277]: `Vec<i32>` doesn't implement `std::fmt::Display`
+  = help: the trait `std::fmt::Display` is not implemented for `Vec<i32>`
+  = note: in format strings you may be able to use `{:?}` instead
+```
+
+This isn't an oversight. `Display` is reserved for types that have exactly one
+**natural, unambiguous, user-facing** textual form — numbers, strings, chars, paths. A
+`Vec<i32>` is a container, not a value, and there are several defensible ways to print one:
+
+```
+[1, 2, 3]
+1, 2, 3
+(1, 2, 3)
+1 2 3
+one per line
+```
+
+The standard library can't know which you meant, so it declines to choose. `Debug` has no
+such problem: its audience is a programmer at a debugger, `[1, 2, 3]` is a fine answer, and
+so `Vec<T>: Debug` holds whenever `T: Debug`.
+
+The same reasoning is why `HashMap`, `HashSet`, `BTreeMap`, tuples, arrays, slices and
+`Option` are all `Debug` but not `Display` — they're structures, not values.
+
+What matters is *why the library's refusal is final*, and that's the orphan rule: if std had
+picked a format and you disagreed, you could not override it, because you're not allowed to
+write `impl Display for Vec<i32>` in your own crate. Declining to implement it leaves the
+decision with you.
+
+Three ways forward:
+
+**Use `Debug` and move on.** Almost always the right call for logs and inspection.
+
+```rust
+let v = vec![1, 2, 3];
+println!("{:?}", v);    // [1, 2, 3]
+println!("{:#?}", v);   // one element per line, indented
+```
+
+**Format at the call site** when you want a specific separator:
+
+```rust
+let v = vec![1, 2, 3];
+let s = v.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(", ");
+println!("{s}");        // 1, 2, 3
+```
+
+**Wrap it in a newtype** when the same formatting shows up in more than one place. The
+wrapper is a type you own, so you're allowed to implement `Display` for it:
+
+```rust
+use std::fmt;
+
+struct CommaSeparated(Vec<i32>);
+
+impl fmt::Display for CommaSeparated {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (i, n) in self.0.iter().enumerate() {
+            if i > 0 {
+                write!(f, ", ")?;
+            }
+            write!(f, "{n}")?;
+        }
+        Ok(())
+    }
+}
+
+println!("{}", CommaSeparated(vec![1, 2, 3]));   // 1, 2, 3
+```
+
+Writing into the formatter directly, rather than building an intermediate `Vec<String>` and
+joining it, avoids allocating — `write!` appends straight to the output buffer. It also
+means `{:>20}` and friends behave sensibly if the caller asks for padding.
+
+### The orphan rule
+
+**You may write `impl Trait for Type` only if the trait or the type is defined in your own
+crate.** If both come from elsewhere — another crate, or the standard library — the impl is
+rejected:
+
+```
+error[E0117]: only traits defined in the current crate can be implemented
+              for types defined outside of the crate
+```
+
+The four cases:
+
+| Trait | Type | Allowed |
+|---|---|---|
+| local | local | yes |
+| local | foreign | yes — implement *your* trait for `Vec<i32>` freely |
+| foreign | local | yes — the everyday `impl Display for MyType` |
+| foreign | foreign | **no** — this is the orphan rule biting |
+
+So `impl Display for Vec<i32>` fails on both counts: `Display` lives in `std`, and so does
+`Vec`. Neither half is yours.
+
+**Why the rule exists: coherence.** Trait impls in Rust are *global*. There's no importing an
+impl, no scoping one to a module, no choosing between them at the call site — for a given
+trait and a given type, the whole program sees exactly one implementation. That's what lets
+`println!("{}", x)` resolve without you naming anything, and what lets `HashMap<K, V>` trust
+that every holder of a `K` hashes it the same way.
+
+Now suppose two crates in your dependency graph both did this:
+
+```rust
+// crate `pretty`
+impl Display for Vec<i32> { /* prints [1, 2, 3] */ }
+
+// crate `csv_ish`
+impl Display for Vec<i32> { /* prints 1,2,3   */ }
+```
+
+Your program depends on both. Which one runs at `println!("{}", v)`? There is no principled
+answer — and worse, the answer would change based on which crates happen to be in the build,
+so adding an unrelated dependency could silently change your output or break compilation
+somewhere deep in the tree. An impl like that, disconnected from both its trait's crate and
+its type's crate, is an **orphan instance**; forbidding them is what keeps coherence
+decidable. (Haskell permits orphans with a warning and the ecosystem has been paying for it
+ever since; Rust chose the strict rule.)
+
+The rule also protects the *other* direction. Because only `std` can implement `std` traits
+for `std` types, `std` can add `impl Display for Vec<i32>` in a future release without
+breaking anyone. If downstream crates could have written that impl, every new std impl would
+be a breaking change.
+
+**The newtype escape hatch.** Wrap the foreign type in a tuple struct you own:
+
+```rust
+struct CommaSeparated(Vec<i32>);          // local type
+impl fmt::Display for CommaSeparated { }  // foreign trait, local type — allowed
+```
+
+This is the **newtype pattern**, and it's the standard answer whenever the orphan rule blocks
+you. It costs nothing at runtime — a single-field tuple struct has the same layout as the
+field — but it does cost ergonomics: `CommaSeparated` has none of `Vec`'s methods. Implement
+`Deref<Target = Vec<i32>>` on it if you want them back, though be aware that using `Deref`
+purely for inheritance-like method reuse is a mild anti-pattern (see
+[`Deref` coercion](#deref-coercion)).
+
+**The rule is a little more generous than "one side must be local."** The precise form
+allows a foreign trait if a local type appears among its generic parameters, before any
+type parameter that's fully generic. In practice this means:
+
+```rust
+struct MyType;
+
+impl From<MyType> for Vec<i32> { … }   // ok: MyType is local and appears first
+impl Display for Vec<MyType> { … }     // ok: the local type is inside the foreign one
+impl Display for Vec<i32> { … }        // rejected: nothing local anywhere
+```
+
+That second one is the useful loophole: `Vec<MyType>` counts as sufficiently "yours" because
+the impl can't collide with anyone else's — no other crate knows about `MyType`. The exact
+formulation lives in [RFC 2451](https://rust-lang.github.io/rfcs/2451-re-rebalance-coherence.html),
+and it's worth knowing it exists so you don't reflexively reach for a newtype when you
+don't need one.
+
+**Where you'll hit this in practice:** implementing `serde::Serialize` for a type from a
+third-party crate. Both foreign, both out of reach. Serde's answer is `#[serde(remote = "…")]`,
+which generates a local shadow type — the newtype pattern with the boilerplate written for
+you. The general shape of the workaround is always the same: make one side local.
+
 ### `Hash` — and its contract with `Eq`
 
 To use a type as a `HashMap` key or a `HashSet` element, you need **`Hash + Eq`** — and since `Eq: PartialEq`, that's three derives in practice:
