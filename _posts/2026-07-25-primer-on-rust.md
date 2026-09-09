@@ -900,7 +900,269 @@ let nums = "1,2,3"
 
 Rule of thumb: **binding to a variable, annotate the variable; stuck mid-expression, reach for the turbofish.**
 
+Turbofish picks a *type argument*. Its sibling — picking a *trait implementation* — is [UFCS](#ufcs-which-trait-implementation), below, and the two compose into `<Type as Trait<T>>::method(...)`.
+
 One aside on that `Point<T>`, since it bites once: both fields share the same parameter, so `Point { x: 3.0, y: 4 }` doesn't compile — `4` infers as `i32` while `3.0` infers as `f64`. Mixed types need two parameters, `struct Point<T, U> { x: T, y: U }`.
+
+## UFCS: which trait implementation?
+
+Turbofish answers *which generic type parameter*. UFCS answers a different question —
+*which implementation* — and the two show up together often enough that it's worth having
+both in the same chapter of your head.
+
+UFCS stands for **Universal Function Call Syntax**, the name from
+[RFC 132](https://github.com/rust-lang/rfcs/blob/master/text/0132-ufcs.md). It's the name
+everyone still uses in conversation, but the Rust Reference calls the feature
+**qualified paths**, and the Book calls it **fully qualified syntax**. Same thing; if you go
+searching the official docs, "UFCS" won't find much.
+
+### Method calls are sugar
+
+Start from the thing you write every day. This:
+
+```rust
+dog.name();
+```
+
+is shorthand. The compiler resolves it to a real path, inserting however many `&`, `&mut`
+or `*` it needs to make a receiver fit:
+
+```rust
+Dog::name(&dog);
+```
+
+That second form is the one you can write by hand, and being able to write it by hand is the
+whole point — because sometimes the sugar is ambiguous and sometimes it picks the wrong
+thing.
+
+Note that the desugared form takes the borrow explicitly. Method syntax auto-refs for you;
+path syntax does not.
+
+### Inherent methods win over trait methods
+
+Give a type both an inherent method and a trait method with the same name:
+
+```rust
+trait Animal {
+    fn name(&self);
+}
+
+struct Dog;
+
+impl Animal for Dog {
+    fn name(&self) {
+        println!("Animal impl");
+    }
+}
+
+impl Dog {
+    fn name(&self) {
+        println!("inherent impl");
+    }
+}
+```
+
+Then `dog.name()` prints `inherent impl`. This isn't ambiguity and it isn't an error — method
+resolution searches inherent impls before trait impls, so the inherent one shadows the trait
+one silently. That's a deliberate rule (it lets a type "override" a trait method with a
+faster or more specific version), but it means the trait method becomes unreachable through
+dot syntax.
+
+Three ways to name what you want:
+
+```rust
+let dog = Dog;
+
+dog.name();                     // inherent impl — the shadowing winner
+Dog::name(&dog);                // inherent impl — same resolution, spelled out
+Animal::name(&dog);             // Animal impl — trait named, type inferred from the receiver
+<Dog as Animal>::name(&dog);    // Animal impl — fully qualified, nothing left to infer
+```
+
+The last two are UFCS. `Animal::name(&dog)` is the short form and works whenever the receiver
+pins down the type. `<Dog as Animal>::name(&dog)` is the fully qualified form, and it's the
+one you fall back to when the short form is still ambiguous.
+
+### Two traits, one method name
+
+The case that forces your hand is two traits offering the same method to the same type:
+
+```rust
+trait First {
+    fn foo(&self);
+}
+
+trait Second {
+    fn foo(&self);
+}
+
+struct X;
+
+impl First for X {
+    fn foo(&self) { println!("First"); }
+}
+
+impl Second for X {
+    fn foo(&self) { println!("Second"); }
+}
+```
+
+Now `x.foo()` doesn't compile:
+
+```
+error[E0034]: multiple applicable items in scope
+  = note: candidate #1 is defined in an impl of the trait `First` for the type `X`
+  = note: candidate #2 is defined in an impl of the trait `Second` for the type `X`
+help: disambiguate the method call for candidate #1:
+      First::foo(&x)
+```
+
+The compiler tells you the fix, and the fix is UFCS:
+
+```rust
+First::foo(&x);
+Second::foo(&x);
+
+// or, spelled out in full:
+<X as First>::foo(&x);
+<X as Second>::foo(&x);
+```
+
+Worth noting: this error only fires if both traits are actually *in scope*. Trait methods are
+only callable where the trait is imported, so a `use` that brings in a second trait can break
+a `.foo()` call that compiled fine yesterday — the classic "I added a dependency and an
+unrelated line stopped compiling" puzzle.
+
+### When there's no receiver at all
+
+The forms above still had a `&x` to infer the type from. Associated functions that take no
+`self` don't, and that's where the fully qualified form stops being optional:
+
+```rust
+trait Spawn {
+    fn create() -> Self;
+}
+```
+
+`Spawn::create()` is unresolvable — nothing in the expression says which implementor you
+want. You have to say it:
+
+```rust
+let d = <Dog as Spawn>::create();
+let c = <Cat as Spawn>::create();
+```
+
+The same shape shows up for associated consts and associated types, which have no receiver
+either:
+
+```rust
+<i32 as Default>::default()
+<u8 as num::Bounded>::max_value()
+<Vec<i32> as IntoIterator>::Item        // in type position
+```
+
+You'll write `<T as Trait>::Assoc` in generic code constantly, because inside a generic
+function `T::Assoc` is only unambiguous while exactly one bound provides it.
+
+### Turbofish inside UFCS
+
+Now the two features meet. Make the trait itself generic, so a type can implement it more
+than once:
+
+```rust
+trait Convert<T> {
+    fn convert(&self) -> T;
+}
+
+struct Foo;
+
+impl Convert<i32> for Foo {
+    fn convert(&self) -> i32 { 42 }
+}
+
+impl Convert<String> for Foo {
+    fn convert(&self) -> String { "hello".to_string() }
+}
+```
+
+`Foo` implements `Convert` twice — these are genuinely different impls, distinguished only by
+the trait's generic parameter. `foo.convert()` is ambiguous, and so is
+`Convert::convert(&foo)`, because naming the trait isn't enough. You need the trait *and* its
+parameter:
+
+```rust
+let n = <Foo as Convert<i32>>::convert(&foo);       // 42
+let s = <Foo as Convert<String>>::convert(&foo);    // "hello"
+```
+
+Reading it left to right:
+
+```
+<Foo as Convert<i32>>::convert(&foo)
+ ^^^     ^^^^^^^ ^^^   ^^^^^^^
+ type    trait   the    method
+                 trait's
+                 generic arg
+```
+
+Often you can shortcut by annotating the binding instead, exactly as with turbofish — `let n: i32 = foo.convert();` resolves fine, because the expected type picks the impl. The fully
+qualified form is what you reach for when there's no binding to annotate.
+
+This is also the general shape of the standard library's `Into`: `x.into()` is ambiguous the
+moment a type implements `Into` for more than one target, and the fix is either an annotation
+or `<X as Into<Target>>::into(x)`.
+
+### Paths as values
+
+One more place the path form matters: a method path with no call parentheses is a plain
+function value, so you can hand it to an iterator adapter.
+
+```rust
+let lens: Vec<usize> = words.iter().map(|s| s.len()).collect();
+let lens: Vec<usize> = words.iter().map(|s| str::len(s)).collect();
+let lens: Vec<usize> = words.iter().copied().map(str::len).collect();
+```
+
+That last line is the path form used directly as a function. `str::parse::<i32>` from the
+[turbofish section](#turbofish--vs-a-type-annotation) is the same trick with a turbofish
+attached. The fully qualified version works too — `<str as ToString>::to_string` — and is
+occasionally the only way to name a specific trait's method as a value.
+
+### One real gotcha it fixes
+
+Auto-ref makes `.clone()` on a `&&T` do something surprising. If `T` is *not* `Clone`, then
+`&T` still is — references are always `Copy` — so the compiler happily resolves the call
+against the outer reference and hands you a `&T` back instead of the `T` you expected:
+
+```rust
+let outer: &&NotClone = &&value;
+let c = outer.clone();          // c: &NotClone — a copied reference, no deep clone
+```
+
+No error, no warning, just a value that isn't what you wanted. The fully qualified form
+refuses to auto-ref, so it tells you the truth:
+
+```rust
+let c = <NotClone as Clone>::clone(outer);   // error: NotClone doesn't implement Clone
+```
+
+Clippy has a lint for this (`clone_double_ref`), but the underlying lesson generalises: dot
+syntax is doing autoref and autoderef work on your behalf, and when a call resolves to
+something you didn't expect, rewriting it as a qualified path is the fastest way to find out
+what the compiler actually picked.
+
+### The mental model
+
+| You write | You're answering |
+|---|---|
+| `foo::<i32>()` | which generic type argument? |
+| `Trait::foo(&x)` | which trait? |
+| `<Type as Trait>::foo(&x)` | which trait, on which type? |
+| `<Type as Trait<T>>::foo(&x)` | which trait, on which type, at which generic argument? |
+
+Reach for the shortest form that compiles. The fully qualified one is verbose on purpose —
+it's the escape hatch, not the default — but knowing it exists turns a class of "multiple
+applicable items in scope" errors from a wall into a one-line fix.
 
 ## `PhantomData`: a type parameter that carries no data
 
