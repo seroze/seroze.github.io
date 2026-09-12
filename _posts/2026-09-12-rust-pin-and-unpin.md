@@ -460,6 +460,84 @@ the handle that `mem::swap` and friends need — it's collateral damage, and it'
 in-place mutation of a `!Unpin` value has to be routed through `Pin<&mut T>` (or
 `pin-project`, for fields that aren't structurally pinned) instead.
 
+### Aside: reading the address behind a reference
+
+If you'd rather watch all this happen than take my word for it, you need the numeric
+address of a value — and getting one involves slightly more ceremony than you'd expect:
+
+```rust
+impl Foo {
+    fn addr(&mut self) -> usize {
+        // self as usize            // error[E0605]: non-primitive cast
+        self as *mut Self as usize
+    }
+}
+```
+
+`self as usize` is rejected even though `self` is a `&mut Self`. `usize` is an integer type
+and `&mut Self` is a reference type, and Rust won't cast directly between the two. You have
+to go through a raw pointer, one step at a time:
+
+```text
+self
+  │  type: &mut Self
+  ▼
+self as *mut Self
+  │  type: *mut Self
+  ▼
+self as *mut Self as usize
+  │  type: usize
+  ▼
+the numerical address
+```
+
+Why the ceremony? Because Rust deliberately distinguishes a *reference* from an *address*.
+A `&mut Self` is a safe abstraction carrying guarantees: it points at a valid value, it
+obeys the aliasing rules, it has a lifetime, and dereferencing it is safe. A `*mut Self` is
+a much lower-level thing. Casting to it says "give me the raw address this reference
+represents", and the second cast says "now hand me that address as an integer".
+
+```text
+&mut Self   →   *mut Self   →   usize
+ reference      raw pointer     integer address
+```
+
+At the machine level the reference already *is* an address-like value. The type system
+simply refuses to let you treat it as one until you explicitly cross the abstraction
+boundary. Note that both casts are safe — creating a raw pointer is safe, it's only
+*dereferencing* one that's unsafe — they're just not implicit.
+
+With that in hand you can watch a move happen:
+
+```rust
+let mut a = Foo { x: 10 };
+println!("{:p}", &mut a as *mut Foo);
+
+let mut b = a;                    // move
+println!("{:p}", &mut b as *mut Foo);   // different address
+```
+
+And you can watch a pinned value refuse to:
+
+```rust
+let mut pinned = Box::pin(Foo { x: 10 });
+let first = &*pinned as *const Foo as usize;
+// ... use it, mutate it, pass the Pin around ...
+let later = &*pinned as *const Foo as usize;
+assert_eq!(first, later);
+```
+
+That `assert_eq!` is a useful thing to write once for your own conviction, and a useless
+thing to ship: it is exactly the runtime check `Pin` does *not* perform. The guarantee is
+static, upheld by the API refusing to hand out the tools a move needs.
+
+Two caveats on address-as-integer, since it's easy to misuse. If your goal is only "do
+these two references point at the same object", use `std::ptr::eq` (or `Rc::ptr_eq` /
+`Arc::ptr_eq` for shared handles) rather than comparing `usize` values — it says what you
+mean and handles the metadata correctly. And a fat pointer (to a `dyn Trait` or a slice)
+can't be cast straight to `usize` at all; you have to thin it first, with
+`ptr as *const () as usize`, which silently throws away the vtable or length half.
+
 ## Unpin is the worst-named trait in the standard library
 
 `Unpin` is an auto-trait, implemented for essentially every type, and it means:
