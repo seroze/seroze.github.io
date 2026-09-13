@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "0-1 Rust-CUDA contribution roadmap"
+title: "[Rust] 0-1 Rust-CUDA contribution roadmap"
 date: 2026-09-13 00:00:00 +0530
 categories: compilers
 tags: [rust, cuda, gpu, compilers, llvm, ptx, rustc]

@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "Pin and Unpin in Rust"
+title: "[Rust] Pin and Unpin in Rust"
 date: 2026-09-12 00:00:00 +0530
 categories: rust
 tags: [rust, pin, async, futures, memory_safety]
