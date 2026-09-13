@@ -128,7 +128,7 @@ macros, `unsafe`, `no_std`, the crate and module system, build scripts, and Carg
 allocator, no OS, and no standard library to lean on. The real skill being trained is reading
 unfamiliar Rust comfortably — Rust-CUDA is a codebase I'll be reading far more than writing.
 
-## Phase 1 — CUDA itself
+## Phase 1 — CUDA itself ✅
 
 **About 2–3 weeks,** and I'm prioritising this above compiler theory. You cannot write a
 compiler backend for a target you don't understand, and right now the GPU is the part of the
