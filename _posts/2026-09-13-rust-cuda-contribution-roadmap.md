@@ -8,15 +8,10 @@ author: "Seroze"
 published: true
 ---
 
-I want to contribute to [Rust-CUDA](https://github.com/Rust-GPU/rust-cuda), and I don't know
-compilers. That's the honest starting position. What follows is the plan I've settled on for
-closing that gap — not a syllabus I found somewhere, but the order I actually intend to learn
-things in, written down so I can be held to it.
+I plan to contribute to [Rust-CUDA](https://github.com/Rust-GPU/rust-cuda), and this is the
+roadmap I plan to follow.
 
-The timing is good. The repository says it's being actively rebooted and explicitly asks for
-contributions, with the goal of making Rust a first-class language for CUDA GPU computing —
-compiling Rust to PTX, plus libraries wrapping the existing CUDA ecosystem. A project in the
-middle of a reboot has more approachable work in it than a settled one.
+The goal of this project is to make Rust a first-class citizen for CUDA GPU computing.
 
 ## Contents
 {:.no_toc}
@@ -70,17 +65,6 @@ The loop I want instead is small and repeats:
                  │
                  └──────► repeat
 ```
-
-Let the codebase decide what theory I need next. The Rust compiler team's own development guide
-says roughly the same thing — treat it as a reference, find a focused area, don't read it cover
-to cover.
-
-Worth noting who maintains this stuff. Christian Legnitto, who maintains Rust-GPU and Rust-CUDA
-and founded VectorWare, spent years on release and infrastructure engineering at Apple and
-Mozilla, led mobile release engineering at Facebook, then was an engineering leader at Robinhood
-before going deep on Rust toolchains and GPUs. Not the "CS degree → compiler PhD → compiler
-engineer" pipeline. That's encouraging: you can arrive at compiler work from systems engineering
-by getting very good at low-level software first.
 
 ## The stack I'm learning
 
