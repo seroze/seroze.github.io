@@ -8,9 +8,6 @@ author: "Seroze"
 published: true
 ---
 
-<!-- SKELETON — fill in the prose under each heading, delete the italic prompts,
-     then flip published: true. -->
-
 ## Contents
 {:.no_toc}
 
