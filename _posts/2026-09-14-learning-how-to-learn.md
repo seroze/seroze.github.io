@@ -5,7 +5,7 @@ date: 2026-09-14 00:00:00 +0530
 categories: meta
 tags: [meta, learning, memory, deliberate_practice, productivity]
 author: "Seroze"
-published: false
+published: true
 ---
 
 <!-- SKELETON — fill in the prose under each heading, delete the italic prompts,
