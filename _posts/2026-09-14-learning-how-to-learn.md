@@ -11,10 +11,6 @@ published: true
 <!-- SKELETON — fill in the prose under each heading, delete the italic prompts,
      then flip published: true. -->
 
-*Opening hook: the thing that made me notice I'd been doing this wrong. One or two
-paragraphs, no list. Something like — I've spent years reading, watching and taking
-notes, and the honest test (can I do the thing without the tab open?) kept failing.*
-
 ## Contents
 {:.no_toc}
 
