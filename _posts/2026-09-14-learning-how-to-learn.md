@@ -19,10 +19,12 @@ published: true
 
 ## The input illusion
 
-*The core claim: exposure feels like learning and isn't. Re-reading, highlighting,
+The core claim: exposure feels like learning and isn't. Re-reading, highlighting,
 watching a lecture at 1.5x — all of them raise familiarity while leaving retrieval
 untouched. Familiarity is what gets measured in the moment; retrieval is what gets
-measured later, when it matters. Give a concrete personal example.*
+measured later, when it matters.
+
+*Give a concrete personal example.*
 
 ## Retrieval is the actual mechanism
 
@@ -69,29 +71,6 @@ like once I drew it properly.*
 if you're getting everything right you're rehearsing, if you're getting everything wrong
 you're flailing. Where I aim, and how I tell which side I'm on.*
 
-## Patterns are an output, not an input
-
-**A pattern you were handed is a shortcut; a pattern you noticed is understanding.** The
-right order is to go at problems hard enough that you have to think from scratch, and
-then — after the third or fourth one — watch the common theme surface on its own. That
-theme is earned: you know what it's made of, which problems it covers, and where it stops
-applying, because you met all of that on the way.
-
-Doing it the other way round is the trap. Learn the catalogue of named tricks first and
-every problem becomes a lookup: which of my twenty templates does this resemble? It works
-for a while, and it stops working exactly when the problem is new — which is the only
-time it mattered. Worse, the lookup is invisible from the inside, because a fast correct
-answer feels identical whether you reasoned it out or recognised it.
-
-Recognition isn't useless. Once a pattern is genuinely yours it's the thing that makes
-you fast, and speed is worth having. The rule I'd keep is about sequence: solve first,
-name afterwards. Never let the catalogue do the thinking, and if a problem is easy enough
-that a template clears it, it wasn't the problem I should have been spending the evening
-on.
-
-*Fill in: the CP version of this — reading editorials too early vs. sitting with a
-problem, and what the difference looked like a month later.*
-
 ## Explaining as a test, not a performance
 
 *Feynman-ish, but framed honestly — explaining out loud is valuable because it fails
@@ -100,16 +79,7 @@ these posts is the test, not the notes.*
 
 ## The visualization test
 
-**If I say I've understood something, I should be able to see it.** Not a vague sense
-that it made sense when I read it — an actual picture I can hold: the pieces, where each
-one sits, what moves, and what the whole thing does from start to finish. If I can walk
-it end to end in my head without gaps, and the minute details are still there when I go
-looking for them, that's understanding. If the picture is blurry in the middle, I've
-memorised a summary.
-
-*Fill in: a worked example of the picture for something I genuinely understand (a
-protocol handshake? a DP table filling in? the borrow checker?) vs. one where the mental
-image goes fuzzy two steps in — and what I do about the fuzzy ones.*
+**If I say I've understood something, I should be able to see it.**
 
 ## Form your own opinion on it
 
@@ -124,9 +94,6 @@ This isn't only about studying. Anything you take on someone else's authority is
 right up until the situation shifts slightly off the one they described, and then you
 have nothing to reason with. That's the cost, and it always arrives later, which is why
 it's so easy to ignore now.
-
-*Fill in: a time the borrowed explanation held up fine in practice, and a time it
-collapsed the moment the problem was phrased differently.*
 
 ## What I actually changed
 
