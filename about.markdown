@@ -28,4 +28,4 @@ Machine learning and numerical computing in Rust.
 
 You can browse everything by [tag](/tags/) or [search the archive](/search/).
 
-For questions, corrections, or anything else, reach out on X — [@{{ site.twitter_username }}](https://x.com/{{ site.twitter_username }}).
+For questions, corrections, or anything else, reach out on X — [@{{ site.twitter_username }}](https://x.com/{{ site.twitter_username }}), or by email at [serozekim@gmail.com](mailto:serozekim@gmail.com).
