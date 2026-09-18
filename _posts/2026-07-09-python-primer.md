@@ -620,7 +620,133 @@ def f(x=None):
     return x
 ```
 
-For a dataclass, the same rule shows up as `field(default_factory=list)` — and dataclasses will actually raise `ValueError: mutable default` if you try to write it the broken way, because the problem is common enough to warrant a guard rail.
+### Dataclass fields, and the one default you can't write
+
+For a dataclass the same rule resurfaces, but the shape of the mistake is different, so it's worth walking through. Start with a field that has no default at all:
+
+```python
+@dataclass
+class ParkingFloor:
+    floor: int
+    spots: dict[str, ParkingSpot]
+```
+
+An annotation is not a default. `spots` is a required positional argument, and the only way to build one of these is to hand it a dictionary yourself:
+
+```python
+ParkingFloor(1, {})     # fine
+ParkingFloor(1)         # TypeError: missing 1 required positional argument: 'spots'
+```
+
+Which is usually not what you meant — a new floor starts empty, and making every caller type `{}` is noise. So the instinct is to write the default into the class body, the way you would for an `int`:
+
+```python
+@dataclass
+class ParkingFloor:
+    floor: int
+    spots: dict[str, ParkingSpot] = {}
+```
+
+That one doesn't even import. Dataclasses refuse it at class-creation time:
+
+```
+ValueError: mutable default <class 'dict'> for field spots is not allowed:
+use default_factory
+```
+
+#### What the guard rail is saving you from
+
+It's worth seeing the bug the `ValueError` prevents, because the same `{}` slips through in two
+neighbouring spellings that nothing checks. Write the `__init__` by hand and Python is perfectly
+happy:
+
+```python
+class ParkingFloor:
+    def __init__(self, floor: int, spots: dict[str, ParkingSpot] = {}):
+        self.floor = floor
+        self.spots = spots
+```
+
+That `{}` is evaluated once, when the `def` line runs, and stored on the function object. So every
+floor constructed without an explicit dictionary is not *a* floor's spot map — it's *the* spot map,
+the same object, shared:
+
+```python
+ground = ParkingFloor(0)
+first  = ParkingFloor(1)
+
+ground.spots["G-01"] = car
+
+first.spots                 # {'G-01': <car>}   ← parked on the ground floor
+ground.spots is first.spots # True
+```
+
+The class-attribute version has the same shape and the same outcome, for a slightly different
+reason — there the dictionary lives on the class, and every instance that hasn't shadowed the name
+reads straight through to it:
+
+```python
+class ParkingFloor:
+    spots: dict[str, ParkingSpot] = {}      # one dict, on the class
+
+    def __init__(self, floor: int):
+        self.floor = floor
+```
+
+This is the "collision" instinct, and it is worse than it first looks:
+
+- **It scales with the number of instances, not with the bug.** Ten floors, one dictionary. A
+  lookup for `"G-01"` succeeds on every floor in the building, `len(floor.spots)` counts the whole
+  garage, and an occupancy check on an empty floor reports it full. There's no error anywhere —
+  just answers that are quietly wrong.
+- **The shared object outlives the instances.** In the `__init__` version the dictionary hangs off
+  `ParkingFloor.__init__.__defaults__` for the lifetime of the process, so entries accumulate
+  across every floor you ever build, including the ones you thought you'd thrown away. You can
+  watch it grow:
+
+  ```python
+  ParkingFloor.__init__.__defaults__    # ({'G-01': <car>},)
+  ```
+
+- **It hides from exactly the test you'd write to find it.** Assignment doesn't mutate, so
+  `floor.spots = {}` or `floor.spots = load_from_db()` rebinds the name and gives *that* floor a
+  private dictionary — the floor you poked looks fine while its neighbours still share the
+  original. Only `spots[key] = ...`, `.update()`, `.pop()` and friends reach the shared object.
+  That's the [mutation-vs-rebinding](#mutation-vs-rebinding) distinction, and it's why this bug
+  survives a casual round of debugging.
+- **Nothing localises it.** The traceback, when one finally arrives, points at whatever code
+  tripped over the duplicate spot — a booking, a billing run — never at the `def` line where the
+  dictionary was born.
+
+The correct spelling asks for a *factory* — a zero-argument callable the generated `__init__` calls
+on every construction, so each instance gets its own dictionary:
+
+```python
+from dataclasses import dataclass, field
+
+@dataclass
+class ParkingFloor:
+    floor: int
+    spots: dict[str, ParkingSpot] = field(default_factory=dict)
+```
+
+```python
+ParkingFloor(0).spots is ParkingFloor(1).spots    # False
+```
+
+Outside a dataclass, the equivalent is the `None` sentinel from the previous section:
+`def __init__(self, floor, spots=None)`, then `self.spots = {} if spots is None else spots`.
+
+<div class="note-red" markdown="1">
+**Never write a mutable default directly — `= {}`, `= []`, `= set()` — as a dataclass field, a
+class attribute, or an argument default.** One object is created at definition time and shared by
+every instance that didn't override it, which silently fuses state that was supposed to be
+per-object. `field(default_factory=dict)` is the fix precisely because it defers the call. And note
+that the dataclass `ValueError` is a guard rail, not a proof of safety: it rejects a default whose
+class is *unhashable*, which catches `list`, `dict` and `set` but waves through a mutable object of
+your own that inherited `object.__hash__` — that one gets shared exactly like the dictionary above,
+with no warning at all.
+</div>
 
 ## Closures capture variables, not values
 
