@@ -12,6 +12,8 @@ published: true
 
 For a worked example of taking this somewhere else, see [Calling Rust from Python with PyO3](/rust-python-interop-pyo3/).
 
+For lifetimes specifically — why `impl<'a> Reader<'a>` names `'a` twice, and when a struct doesn't need a lifetime parameter at all — see [Lifetimes in Rust](/rust-lifetimes/).
+
 ## Contents
 {:.no_toc}
 
@@ -335,6 +337,22 @@ Which to prefer is mostly about what you expect to change. `crate::` paths read
 identically from every file in the crate and survive moving a file to a
 different depth; `super::` is shorter and says "my sibling", which is often what
 you actually mean, but it goes stale the moment the file moves.
+
+## `///` vs. `//!` {#doc-comments}
+
+Both are doc comments, and the `!` tells you which direction they point. `///` documents
+the item *below* it — a struct, a function, a module declaration — and desugars to the outer
+attribute `#[doc = "..."]`. `//!` documents the item *containing* it, so it desugars to the
+inner attribute `#![doc = "..."]` and only makes sense at the top of a module or of
+`lib.rs`, where it becomes the crate's front page. That's the whole difference: `#[doc]`
+attaches to what follows, `#![doc]` attaches to the thing you're already inside.
+
+```rust
+//! Timestamp utilities.        // == #![doc = "Timestamp utilities."] on the crate
+
+/// Returns the current timestamp.   // == #[doc = "..."] on `now`
+pub fn now() -> u64 { /* ... */ }
+```
 
 ## Initializing objects
 
