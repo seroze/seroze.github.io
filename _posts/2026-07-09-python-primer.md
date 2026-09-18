@@ -188,9 +188,12 @@ applies to the whole tuple, so you can't mix directions inside a single `key`.
 ### `tuple`
 
 Immutable, so it only has `count` and `index`. Its real job is being *hashable*, which is
-what lets it be a `dict` key or a `set` element — but only if everything inside it is
-hashable too. A tuple containing a list is not hashable; see
-[Tuples don't freeze what they contain](#tuples-dont-freeze-what-they-contain).
+what lets it be a `dict` key or a `set` element.
+
+<div class="note-red" markdown="1">
+**But only if everything inside it is hashable too.** A tuple containing a list is not
+hashable — see [Tuples don't freeze what they contain](#tuples-dont-freeze-what-they-contain).
+</div>
 
 ### `collections.deque`
 
