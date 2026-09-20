@@ -404,22 +404,150 @@ implementation detail of one interpreter, it's exactly what the [free-threaded
 build](/python-primer/#the-gil) is changing, and "protected by the GIL" is not a sentence
 you can point at in a design review. Naming the lock that protects each structure is.
 
-Two things follow from having two domains.
+Two questions follow from having two domains, and they're the last hard part of this
+design.
 
-**Never hold one while taking the other** — or if you must, fix an order and keep it. The
-code above holds slot locks, releases them, *then* takes `meta_lock`. That keeps the two
-domains independent: no thread ever holds a lock from one while waiting on a lock from the
-other, so there's no cross-domain cycle to worry about. The moment you write
-`with self.meta_lock: ... self.occupy(...)` you've created a second ordering constraint
-and you now have to enforce it everywhere.
+## Does the metadata lock remove the serialization assumption?
 
-**The gap between them is visible.** In `park()`, the slots are occupied a few instructions
-before `self.pos` learns about it. A concurrent `remove(vehicle_id)` landing in that gap
-would find nothing in `pos`, return `False`, and leave the slots held forever. The stated
-assumption — *operations for a given `vehicle_id` are serialized* — is exactly what rules
-that out, which is why it's worth stating out loud rather than leaving implicit. Drop the
-assumption and you need a real reservation record written under `meta_lock` before the
-slots are taken.
+For the dictionary, yes. For the vehicle, no — and that gap is the distinction most worth
+carrying out of this problem.
+
+`meta_lock` makes every access to `self.pos` mutually exclusive:
+
+```python
+with self.meta_lock:
+    self.pos[vehicle_id] = (pos, length)
+```
+
+Three threads running `park("car_1")`, `remove("car_1")` and `park("car_1")` at once can't
+corrupt that dict, can't read a half-written entry, can't lose an insert. That guarantee
+needs no assumption about who calls what when.
+
+It does not make `park` and `remove` atomic *with respect to each other*. Each takes
+several locks over its lifetime, releasing in between, and another thread can land in any
+of those gaps:
+
+```
+T1 park(car_1):
+    occupies slot 10
+
+T2 remove(car_1):
+    reads pos -> car_1 isn't there yet
+    returns False
+
+T1:
+    pos["car_1"] = (10, 1)
+```
+
+The dictionary was never in a bad state. Every individual access to it was locked. The
+outcome is still wrong: the car is parked, the removal reported failure, and slot 10 is now
+held by a vehicle nobody will ever ask about again.
+
+**A thread-safe data structure does not give you thread-safe operations.** The two lock
+domains protect two structures. Neither protects the *transition* — "this vehicle goes from
+unparked to parked" — which spans both of them.
+
+Two ways out, and which one is right depends on the requirement:
+
+- **Keep the assumption.** If operations for a given `vehicle_id` are serialized by the
+  caller — one request in flight per vehicle, which is how a gate terminal actually behaves
+  — the gap can never be observed and the code above is finished. That's a legitimate
+  answer as long as it's stated rather than smuggled in.
+- **Drop the assumption.** Give each vehicle its own lock and hold it across the whole
+  operation, so park and remove for the same vehicle serialize against each other. It's
+  cheap: different vehicles still don't contend, which is the property you were buying with
+  per-slot locks in the first place.
+
+They fail differently, which is the reason to know which one you picked. Under the
+assumption, a caller who breaks it gets a silently leaked slot. Under the per-vehicle lock,
+they get to wait.
+
+## Can two classes of lock deadlock?
+
+The earlier argument covered the slot locks — increasing position, no cycle. `meta_lock` is
+a second *class* of lock, so that argument has to be redone. The question is no longer "in
+what order do I take slot locks" but "where does `meta_lock` sit relative to them."
+
+Name them:
+
+```
+M                   = meta_lock
+L0, L1, ..., Ln-1   = slot locks
+```
+
+Now suppose `park()` held its slot locks while reaching for the metadata, and `remove()`
+did the reverse:
+
+```
+park:    L5 -> L6 -> M
+remove:  M  -> L5 -> L6
+```
+
+```
+T1 (park)            T2 (remove)
+
+holds L5             holds M
+   |                     |
+waits for M          waits for L5
+```
+
+Deadlock. Neither thread is doing anything unreasonable in isolation, and both are
+internally consistent about slot ordering — my original "always take `i` before `i+1`"
+rule is satisfied on both sides. The cycle comes from the two *classes* being visited in
+opposite orders: `L5 -> M` on one path, `M -> L5` on the other. Adding a lock class
+invalidates the old proof even when no existing code changed.
+
+Two fixes, both fine.
+
+**Put M in the total order.** Declare
+
+```
+M < L0 < L1 < ... < Ln-1
+```
+
+and require every path to acquire left to right. `M -> L5 -> L6` is legal; `L5 -> M` is
+not. No cycle can form, for exactly the reason from before — a thread holding a higher lock
+never reaches back for a lower one.
+
+**Or never hold both at once,** which is what the implementation above does. `park()` takes
+the slot locks, releases them, and only then takes `meta_lock`. `remove()` takes `meta_lock`
+to read `pos`, releases it, takes the slot locks, releases those, then takes `meta_lock`
+again to delete. No thread ever holds a lock of one class while waiting on the other, so
+the wait-for graph has no edge between classes at all.
+
+The weaker-looking option is often the better one. A total order is a rule you have to keep
+enforcing as the code grows; "these two domains are never held together" is a property a
+reviewer can check by eye. The cost is the gap in the middle — which is precisely the
+operation-level race from the previous section. You're trading a deadlock risk for an
+atomicity gap, and it's worth saying that out loud rather than discovering it later.
+
+## Proving it, in four steps
+
+The habit generalises past this problem, and it's the part I'd actually want to remember:
+
+1. **List every lock.** Including the ones that don't look like locks — a queue's internal
+   mutex, a connection pool's semaphore, the lock inside a library you call while holding
+   your own.
+2. **Define a total ordering over them.** It has to come from something intrinsic to the
+   resources — slot index, account id, inode number — never from the order a particular
+   request happened to mention them.
+3. **Walk every code path** that takes more than one lock, and write down the sequence it
+   acquires.
+4. **Check that every sequence is increasing** in that order.
+
+If all four hold, deadlock is impossible and you can say so as a proof instead of as a
+feeling about your access patterns. For this class the audit is short:
+
+| path | acquires | verdict |
+|---|---|---|
+| `occupy` | slot locks, left to right | increasing |
+| `is_free` | slot locks, left to right | increasing |
+| `park` | slot locks (via `occupy`), then M on its own | never held together |
+| `remove` | M on its own, then slot locks, then M on its own | never held together |
+
+Step 3 is the one people skip, and it's where the bugs live: the ordering is usually right
+in the function you're reading and wrong in the one that calls it while already holding
+something.
 
 ## Checking it actually holds
 
@@ -495,3 +623,9 @@ account id, inode number) rather than the order the request happened to mention 
   truck is one object."
 - Say which lock protects which structure. "The GIL makes it fine" isn't an answer, and
   the free-threaded build is busy making it less of one.
+- A thread-safe data structure is not a thread-safe operation. Locking every access to a
+  dict says nothing about whether the multi-step operation around it is atomic.
+- Adding a second *class* of lock invalidates your old deadlock proof even if no existing
+  code changed. Either place it in the total order, or never hold the two classes at once.
+- The proof is four steps: list every lock, define a total order, walk every multi-lock
+  path, check each sequence is increasing. Step 3 is where the bugs are.
