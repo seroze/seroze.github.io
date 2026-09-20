@@ -315,6 +315,12 @@ of program points where the reference might still be used, computed by a livenes
 and solved as a constraint problem. That's why it handles branches and loops sensibly —
 "last use" is a genuinely path-dependent question, and an AST walk can't ask it.
 
+If that "a lifetime is a set of program points" line still reads like a slogan rather than
+a definition, leddoo's [but what is `'a` lifetime?](https://www.youtube.com/watch?v=gRAVZv7V91Q)
+is twelve minutes on exactly that framing. It's built on Niko Matsakis's
+[alias-based formulation of the borrow checker](https://smallcultfollowing.com/babysteps/blog/2018/04/27/an-alias-based-formulation-of-the-borrow-checker/),
+which is the longer written version if you'd rather read than watch.
+
 NLL shipped in Rust 1.31 for the 2018 edition and reached the 2015 edition in 1.36, so
 anything you compile today has it. The practical takeaway is smaller than the machinery:
 if you're reading Rust from before 2018 and wondering why it's full of tiny bare blocks,
