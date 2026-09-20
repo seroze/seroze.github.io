@@ -3,12 +3,18 @@ layout: post
 title: "[Biology] Importance of sleeping"
 date: 2026-08-20 00:00:00 +0530
 categories: biology
-tags: [biology, sleep, recovery]
+tags: [biology, sleep, recovery, exercise]
 author: "Seroze"
 published: true
 ---
 
 I went looking for an answer to a small question — does sleeping produce vitamins? — and ended up somewhere more interesting. The short answer is no, but the long answer is that sleep decides how well your body can use the vitamins it already has, and that the two stages people care about, REM and deep sleep, are doing completely different jobs.
+
+## Contents
+{:.no_toc}
+
+* TOC placeholder — replaced by kramdown
+{:toc}
 
 ## Sleep doesn't make vitamins
 
@@ -65,6 +71,18 @@ All of the above assumes you actually stay asleep, and the two things most likel
 If you live anywhere with mosquitos, get a net. It is worth more than any amount of sleep-hygiene advice. A single mosquito doesn't wake you up once — it pulls you out of deep sleep repeatedly across the night, and those arousals are short enough that you won't remember them in the morning. You'll just feel like eight hours didn't work. A net costs almost nothing and removes the problem entirely, which is a better deal than repellent you have to reapply or a machine you have to remember to switch on.
 
 Temperature is the other one. Core body temperature has to drop for sleep to start and stay down for deep sleep to hold, so a warm room fights you all night. This matters more than people in Indian cities like Bangalore or Hyderabad tend to assume — the weather is pleasant enough that the room never feels *hot*, just moderately warm, which is exactly warm enough to keep you in lighter stages without ever waking you enough to blame it. An air cooler is usually plenty in that climate; an AC if the humidity is bad. Cool and slightly under a blanket beats warm and uncovered.
+
+## When the problem isn't the schedule, it's the 3 a.m. wake-up
+
+Everything above assumes the failure mode is not going to bed early enough. Mine often isn't. Some nights I fall asleep fine, wake up about three hours later for no reason I can identify, and then can't get back down. Lying there doesn't work — after enough failed attempts I give up, get up, and work until seven or eight in the morning, then sleep another four hours and wake up again. Two blocks of broken sleep instead of one whole night.
+
+I don't know why it happens. It isn't every night, it doesn't line up with anything obvious I've eaten or done, and I've stopped trying to explain it. What I've found is that I can make it less likely rather than diagnose it.
+
+The thing that helps most is being genuinely physically tired by evening, and the way I get there is the gym — finished by two or three in the afternoon, with a shower there. The timing matters as much as the session: late-evening training leaves me wired rather than tired, and an afternoon finish gives the body hours to cool back down before bed, which is the same core-temperature thing as the warm-room problem.
+
+What also matters is that the session actually produces sweat. Lifting alone doesn't do it for me — I can finish a full strength session and still feel like I have a full day's charge left. So I add fifteen minutes on the elliptical, or fifteen minutes of running at 12 km/h, and that's the part that tires the body for the rest of the day. On the days I do that, I'm much less likely to be awake at three in the morning. On the days I skip it, I often am.
+
+This is one person's pattern, not advice with evidence behind it. But if you're someone who can't reliably get six hours in one piece, it's worth checking whether your day contains anything that physically tires you out, before you start rearranging your bedtime.
 
 **The practical test is simple. If you wake up without an alarm at roughly the same time and don't crash in the afternoon, you're getting enough. Needing an alarm every single day means you're running a deficit.**
 
