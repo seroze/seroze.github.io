@@ -176,6 +176,150 @@ for the rest of the buffer's life and can't touch it again afterwards — which 
 opposite of what you want from a method you call once per field. Naming a lifetime is a
 constraint, so don't name one unless you mean it.
 
+## How this worked before NLL
+
+Everything above assumes the borrow checker Rust has today. It's worth knowing that it
+used to be noticeably dumber, because a lot of older Rust code — and a lot of the advice
+you'll find while searching — is shaped around the old rules.
+
+The old borrow checker tied a borrow to the *lexical scope* it was created in. A `&x`
+stayed live until the closing brace of the block containing it, whether or not you ever
+touched the reference again. Non-lexical lifetimes (NLL) replaced that with something
+closer to what you'd guess by reading the code: a borrow lasts until its **last use**.
+
+The canonical example is three lines long:
+
+```rust
+fn main() {
+    let mut x = 10;
+
+    let r = &x;
+    println!("{}", r);
+
+    let m = &mut x;
+    *m += 1;
+}
+```
+
+This compiles today. `r` is dead after the `println!`, so the shared borrow is over by the
+time `&mut x` happens and the two never overlap. Pre-NLL, the compiler saw `r` declared in
+`main`'s body, extended its borrow to the end of `main`, and rejected the program:
+
+```
+error[E0502]: cannot borrow `x` as mutable because it is also borrowed as immutable
+```
+
+Which is a confusing error to get, because the immutable borrow it's complaining about is
+plainly finished.
+
+Here's the difference, with the borrow drawn as a bar:
+
+```
+                      pre-NLL              NLL
+let r = &x;             ┃                   ┃
+println!("{}", r);      ┃                   ┗━ borrow ends
+let m = &mut x;         ┃  ← error          ok
+*m += 1;                ┃
+}                       ┗━ borrow ends
+```
+
+### The block trick
+
+This is why older Rust is sprinkled with blocks that seem to exist for no reason:
+
+```rust
+fn main() {
+    let mut x = 10;
+
+    {
+        let r = &x;
+        println!("{}", r);
+    } // borrow ends here, because the scope does
+
+    let m = &mut x;
+    *m += 1;
+}
+```
+
+The block isn't doing anything at runtime. It's there to hand the borrow checker a lexical
+boundary it could actually see, since that was the only vocabulary it had. If you find
+yourself writing one of these today, you almost certainly don't need it — the cases where
+an explicit scope still helps are ones where a value has a `Drop` impl, because dropping
+counts as a use and the compiler won't move it earlier for you.
+
+### The one that actually hurt
+
+The three-line example is a toy. This is the shape that made NLL worth doing:
+
+```rust
+let mut data = vec![1, 2, 3];
+
+let first = &data[0];
+println!("{}", first);
+
+data.push(4);
+```
+
+Perfectly safe — `first` is done being read before anything mutates the vector — and
+perfectly rejected by the old checker. You'd hit this constantly in real code: grab a
+reference into a collection, use it, then want to mutate the collection. The workaround
+was either an artificial block or copying the value out, and neither one is what you
+meant.
+
+Conditionals made it worse, because the borrow got extended past branches that couldn't
+possibly use it:
+
+```rust
+let mut map: HashMap<String, Vec<u32>> = HashMap::new();
+
+match map.get_mut("key") {
+    Some(v) => v.push(1),
+    None => {
+        map.insert("key".to_string(), vec![1]); // pre-NLL: still borrowed
+    }
+}
+```
+
+In the `None` arm the mutable borrow from `get_mut` obviously isn't live — there's no `v`
+in scope to use it. The old checker didn't care; the borrow belonged to the enclosing
+scope, so the `insert` was an error. This particular one is famous enough to have a name,
+and NLL only *partially* fixed it: the version above compiles now, but the closely related
+one where you return the reference out of the match still doesn't. That remaining hole is
+what Polonius, the next iteration of the borrow checker, is meant to close.
+
+### What NLL did not change
+
+Two things are easy to over-read here.
+
+It didn't touch the aliasing rules. You still get many shared references *or* one mutable
+reference, never both. NLL only changed the compiler's answer to "is this borrow still
+live?", not what it does with the answer.
+
+And it didn't remove explicit lifetime annotations. A signature like
+
+```rust
+fn longest<'a>(a: &'a str, b: &'a str) -> &'a str
+```
+
+means exactly what it always meant: the returned reference is tied to the inputs. That
+`'a` describes a relationship across a function boundary, which is caller-visible API, and
+no amount of cleverness inside the function body can infer it. NLL is about reasoning
+*within* a function body. Everything earlier in this post about `Reader<'a>` and
+`impl<'a>` is unaffected by it.
+
+### Why the switch was a big deal internally
+
+The old checker walked the AST and asked "which lexical scope does this borrow belong to?"
+NLL threw that out and works on the control-flow graph instead: a lifetime becomes a set
+of program points where the reference might still be used, computed by a liveness analysis
+and solved as a constraint problem. That's why it handles branches and loops sensibly —
+"last use" is a genuinely path-dependent question, and an AST walk can't ask it.
+
+NLL shipped in Rust 1.31 for the 2018 edition and reached the 2015 edition in 1.36, so
+anything you compile today has it. The practical takeaway is smaller than the machinery:
+if you're reading Rust from before 2018 and wondering why it's full of tiny bare blocks,
+now you know, and you can delete most of them.
+
 ## Three bugs that weren't lifetime bugs at all
 
 While staring at lifetimes I nearly missed the actual compile errors, which were dumber:
@@ -359,3 +503,5 @@ format. The day the format grows per-field type tags, this function has to grow 
 - `'static` is a lifetime, not a lifetime *parameter*. A struct that only holds `&'static`
   references doesn't need `<'a>`.
 - `'_` is the honest thing to write when a lifetime exists but you have no constraint on it.
+- A borrow ends at its last use, not at the closing brace. That's NLL; before 2018 it
+  really did end at the brace, which is why old code is full of blocks that do nothing.
