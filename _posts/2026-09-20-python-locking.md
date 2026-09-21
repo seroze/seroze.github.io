@@ -3,7 +3,7 @@ layout: post
 title: "[Python] Locking in Python"
 date: 2026-09-20 00:00:00 +0530
 categories: python
-tags: [python, concurrency, locking, threads, system_design]
+tags: [python, concurrency, locking, threads, system_design, pending]
 author: "Seroze"
 published: true
 ---
@@ -605,6 +605,56 @@ release. Row-level locks in a database, a bank transfer touching two accounts, a
 allocator's size-class locks, a filesystem renaming across two directories — same four
 steps, and the global order is always something intrinsic to the resources (slot index,
 account id, inode number) rather than the order the request happened to mention them in.
+
+## A second problem: an asynchronous task processor
+
+**TODO** — not written yet.
+
+Design an asynchronous task processing system and extend it to support:
+
+- scheduling tasks for a particular time,
+- scheduling tasks at recurring intervals,
+- task processing and execution management.
+
+The shape most implementations converge on:
+
+```
+                    submit()
+                       |
+                       v
+              +----------------+
+              |  Scheduler     |
+              |                |
+              | min-heap       |
+              | (run_at, task) |
+              +-------+--------+
+                      |
+                task becomes due
+                      |
+                      v
+              +----------------+
+              | Ready Queue    |
+              | FIFO / channel |
+              +-------+--------+
+                      |
+          +-----------+-----------+
+          |           |           |
+          v           v           v
+       Worker 1    Worker 2    Worker N
+          |           |           |
+          +-----------+-----------+
+                      |
+                      v
+                 execute(task)
+```
+
+### Why the heap and the queue are separate structures
+
+### Scheduling for a particular time
+
+### Recurring intervals
+
+### Execution management: cancellation, failure, shutdown
 
 ## What I'd tell myself before starting
 
