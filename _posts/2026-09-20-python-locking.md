@@ -10,9 +10,10 @@ published: true
 
 *Companion to [A primer in Python](/python-primer/) — its [GIL section](/python-primer/#the-gil) argues that
 `counter += 1` needs a `Lock` and then never shows you one. This post is that missing half,
-worked through a single design problem instead of a tour of the `threading` module. The
-[Rust version](/rust-locking/) of the same material is a useful contrast: there the compiler
-does half of this for you.*
+worked through two design problems instead of a tour of the `threading` module: a thread-safe
+parking lot, which is about mutual exclusion, and an asynchronous task processor, which is
+about waiting. The [Rust version](/rust-locking/) of the same material is a useful contrast:
+there the compiler does half of this for you.*
 
 ## Contents
 {:.no_toc}
