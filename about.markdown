@@ -12,6 +12,12 @@ Nothing here is original research. I'm planning a separate portfolio blog for th
 
 ## Open source contributions
 
+### [dial9](https://github.com/dial9-rs/dial9) {#dial9}
+
+Tokio telemetry you can run in production, in Rust.
+
+- [#905 — skip the bucket reservation on a dealloc miss](https://github.com/dial9-rs/dial9/pull/905). The memory-profiling hook resolved every deallocation through `scc`'s `entry()`, which takes the per-bucket write lock and reserves a vacant entry before the caller can even see that the address was never in the map. The liveset holds only *sampled* allocations — about 99.9% of deallocs miss — so nearly every call paid for a reservation it immediately discarded. A lock-free `peek_with` now runs first and returns early on a miss; hits still go through `entry()`, so the bucket lock continues to span the read and the remove and a racing `on_alloc` can't put stale metadata on the emitted `RawFree`. An all-miss microbenchmark of the two call shapes came out 2.3–2.5x apart.
+
 ### [evalscope](https://github.com/modelscope/evalscope) {#evalscope}
 
 Evaluation framework for LLMs and VLMs.
