@@ -3,7 +3,7 @@ layout: post
 title: "[Python] Locking in Python"
 date: 2026-09-20 00:00:00 +0530
 categories: python
-tags: [python, concurrency, locking, threads, system_design, pending]
+tags: [python, concurrency, locking, threads, pending]
 author: "Seroze"
 published: true
 ---
