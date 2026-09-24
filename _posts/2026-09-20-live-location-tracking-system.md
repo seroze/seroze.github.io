@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "[Distributed Systems] Designing a Live Location Tracking System"
+title: "[High level design] Designing a Live Location Tracking System"
 date: 2026-09-20 00:00:00 +0530
 categories: system-design
 tags: [distributed_systems, system_design, redis, geohash, kafka, time_series]
