@@ -3,7 +3,7 @@ layout: post
 title: "[CodeChef] FALLPR — Fall Prevention: I deleted the wrong element"
 date: 2026-09-24 00:00:00 +0530
 categories: competitive-programming
-tags: [competitive_programming, codechef, greedy, prefix_sums, python]
+tags: [competitive_programming, codechef, greedy, prefix_sums, python, silly_mistake]
 author: "Seroze"
 published: true
 ---
