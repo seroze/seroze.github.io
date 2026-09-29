@@ -472,6 +472,141 @@ A strong answer:
 > durability, I'd keep one semi-sync standby in another availability zone, so a failover
 > doesn't lose acknowledged writes, without every write waiting on every replica.
 
+## Disaster recovery
+
+What happens when a node in a sync setup fails, and what's the recovery workflow? Take
+this config:
+
+```
+synchronous_standby_names = 'FIRST 1 (replica_a, replica_b, replica_c)'
+```
+
+`replica_a` is the sync standby; `replica_b` and `replica_c` are async (Postgres labels
+them *potential* sync standbys). There are three separate failure cases, and they play out
+very differently.
+
+### RPO and RTO
+
+Two terms frame every DR discussion:
+
+- **RPO — Recovery Point Objective.** The most data you can afford to lose, measured in
+  time. "RPO = 5 minutes" means losing up to the last 5 minutes of writes is acceptable. It
+  looks *backward* from the moment of failure.
+- **RTO — Recovery Time Objective.** The longest you can afford to be down. "RTO = 30
+  minutes" means service has to be back within 30 minutes. It looks *forward* from the
+  moment of failure.
+
+### Case 1: the sync standby fails
+
+Postgres handles this automatically:
+
+1. The primary loses its connection to `replica_a`.
+2. It picks the next connected standby in the priority list, `replica_b`, and makes it the
+   sync standby. No config change or reload is needed.
+3. Commits that were waiting on `replica_a` are released once `replica_b` confirms it has
+   flushed WAL up to their LSN.
+
+You can watch this in `pg_stat_replication.sync_state`:
+
+```
+replica_a  → (gone)
+replica_b  → potential → sync
+replica_c  → potential
+```
+
+Things that can go wrong:
+
+- **The next standby is lagging.** If `replica_b` is in state `catchup` rather than
+  `streaming`, commits stall until it catches up. Failover is automatic, but not always
+  instant.
+- **All standbys are down.** Commits hang indefinitely — they don't error, clients just
+  wait. Postgres chooses durability over availability.
+- **The escape hatch.** Set `synchronous_standby_names = ''` and run
+  `SELECT pg_reload_conf();`. Writes resume, but you're now async, and a primary crash can
+  lose data. This is a deliberate business decision, not something to automate.
+- **"Cancelled" doesn't mean rolled back.** If a client cancels a commit that's waiting on
+  replication, Postgres returns `WARNING: canceled wait for synchronous replication ...
+  transaction has already committed locally`. The transaction is committed on the primary
+  but may not be replicated.
+
+Bringing `replica_a` back:
+
+- Restart it. If the primary still has the WAL it missed (kept by a replication slot or
+  `wal_keep_size`), it streams and catches up.
+- If that WAL is gone, rebuild it with `pg_basebackup`.
+- Once caught up, it becomes sync again automatically, since it's first in the list.
+- **Watch out:** a replication slot for a dead replica retains WAL forever and can fill the
+  primary's disk. Set `max_slot_wal_keep_size` as a safety limit.
+
+### Case 2: the primary fails
+
+This is the real DR scenario. **Postgres has no built-in automatic failover.** You need
+tooling: Patroni (most common, backed by etcd or Consul), repmgr or pg_auto_failover — or a
+managed service like RDS Multi-AZ.
+
+The workflow:
+
+1. **Detect.** The primary's leader lease (in Patroni, a key in etcd) expires after missed
+   heartbeats. Tune the timeout to avoid false positives from network blips.
+2. **Fence the old primary.** Make sure it can't accept writes anymore — STONITH, cutting
+   its network access, or Patroni demoting it when it loses the lease. Skip this and you
+   risk **split brain**: two primaries both accepting writes.
+3. **Choose the right standby.** Promote the one that was sync at the time of the crash.
+   It's the only node guaranteed to have every acknowledged commit, which gives **RPO = 0**.
+   Promoting `replica_c` (async) would silently lose data. This is why Patroni's
+   `synchronous_mode` records the current sync standby in etcd — so it knows exactly which
+   node is safe to promote.
+4. **Promote it** with `pg_promote()` or `pg_ctl promote`. The new primary starts a new
+   timeline.
+5. **Repoint the other replicas** at the new primary. They follow the timeline switch
+   (`recovery_target_timeline = 'latest'`).
+6. **Update `synchronous_standby_names`** on the new primary to list the remaining
+   standbys, e.g. `FIRST 1 (replica_c, old_primary)`. Patroni does this automatically.
+7. **Redirect clients** by moving a virtual IP, updating DNS, or using HAProxy/PgBouncer
+   with health checks against Patroni's REST API.
+8. **Rejoin the old primary as a standby.** It may have written WAL that never reached the
+   sync standby (transactions that never got an ack), so its history has diverged.
+   `pg_rewind` rolls it back to where the timelines forked (it needs `wal_log_hints = on`
+   or data checksums). If that fails, rebuild with `pg_basebackup`.
+
+**In-flight transactions.** A client whose commit never got an ack before the crash didn't
+get a success, so losing that write is acceptable. But the client can't tell whether it
+committed — which is why **idempotency keys** matter: the retry has to be safe.
+
+### Case 3: the whole region goes down
+
+The sync standby is often in the same region as the primary (for latency), so a region
+failure takes out both.
+
+- **A cross-region async replica** gives fast recovery, but RPO > 0: you lose whatever was
+  lagging, typically seconds.
+- **Continuous WAL archiving to S3** (pgBackRest or WAL-G) plus base backups gives
+  point-in-time recovery (PITR). It's slower to restore — hours for a large database — but
+  it's the last line of defense. It also protects against a `DROP TABLE`, which replication
+  would faithfully copy to every standby.
+
+### Picking a setup
+
+| Setup | RPO | RTO |
+|---|---|---|
+| Sync standby + Patroni failover | 0 (no acknowledged writes lost) | ~30 seconds to a few minutes |
+| Async replica failover | A few seconds (whatever was lagging) | ~1 minute |
+| Restore from S3 backups + WAL (PITR) | Seconds to minutes (depends on archive frequency) | Hours for a large database |
+
+Lower RPO and RTO cost more money and add write latency, so the business sets the targets
+and engineering picks the setup that meets them.
+
+### The interview one-liner
+
+> If the sync standby dies, Postgres promotes the next one in the `FIRST` list
+> automatically. If all standbys die, commits block, and dropping to async is a business
+> decision. If the primary dies, Postgres doesn't fail over on its own. Patroni detects it,
+> fences the old primary to prevent split brain, and promotes the sync standby
+> specifically, since that's what gives RPO = 0. Then it repoints the other replicas and
+> the clients, and `pg_rewind`s the old primary back in as a standby. For a region-level
+> disaster, you rely on a cross-region async replica or WAL archives in S3, and accept some
+> RPO.
+
 ## When should you shard?
 
 Scenario: back to the start. The table is 1.2 million rows, one Postgres instance, and the
