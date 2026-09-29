@@ -398,7 +398,7 @@ staleness is fine.
 
 | | Async | Sync | Semi-sync / quorum commit |
 |---|---|---|---|
-| Primary waits for | Nobody | All (or named) replicas | At least 1 or k replicas |
+| Primary waits for | Nobody | Every replica (rare in practice) | A configured number k of standbys |
 | Write latency | Lowest | Highest | Middle |
 | On primary crash | Can lose recent committed writes | No loss | No loss if an acked replica survives |
 | If a replica dies | Nothing happens | Writes block | Fine while k replicas are up |
@@ -412,6 +412,58 @@ staleness is fine.
 `synchronous_commit = on` only guarantees the replica has written the WAL to disk, not
 applied it. You need `remote_apply` for replica reads to see the write.**
 {: .note-red}
+
+### How many replicas does "sync" actually wait for?
+
+Usually only a subset, and you configure how many. Waiting for *every* replica exists in
+theory, but almost nobody runs it, because one slow or dead replica would stall every write.
+
+**The typical production setup: one primary, k synchronous standbys (usually k = 1) in a
+different availability zone, and every other replica async.** At least two nodes always
+have every committed write, you only pay for one extra round trip per commit, and the
+standby survives a zone outage. *Designing Data-Intensive Applications* calls this
+**semi-synchronous** replication.
+
+#### Postgres
+
+`synchronous_standby_names` chooses which standbys count and how many to wait for:
+
+```
+# Wait for the first 1 available standby, in priority order
+synchronous_standby_names = 'FIRST 1 (replica_a, replica_b, replica_c)'
+
+# Quorum: wait for ANY 2 of these 3 (whichever ack first)
+synchronous_standby_names = 'ANY 2 (replica_a, replica_b, replica_c)'
+```
+
+- `FIRST k` is **priority-based**: the primary waits for the k highest-priority standbys
+  that are connected. If one drops, the next in the list takes its place.
+- `ANY k` is **quorum-based**: the primary waits for any k of the listed standbys.
+- Standbys that aren't listed are async.
+
+`synchronous_commit` then decides what an ack *means*:
+
+| Value | The replica has… | Can a read on the replica see the write? |
+|---|---|---|
+| `remote_write` | received the WAL and handed it to the OS (not yet flushed) | Not guaranteed |
+| `on` (default) | flushed the WAL to disk | Not guaranteed |
+| `remote_apply` | replayed the WAL | Yes |
+
+If not enough sync standbys are available, Postgres **blocks commits** until they come back.
+It chooses durability over availability.
+
+#### MySQL semi-sync
+
+- `rpl_semi_sync_source_wait_for_replica_count` defaults to 1. The primary waits for one
+  replica to acknowledge it *received* the event, not that it applied it.
+- The catch: if no replica acks within `rpl_semi_sync_source_timeout` (10 seconds by
+  default), MySQL quietly **falls back to async**. A crash right after that fallback can
+  still lose data — a good detail to bring up in an interview.
+
+#### Consensus-based databases
+
+CockroachDB, Spanner, etcd and TiDB work differently. There, "synchronous" means waiting
+for a **majority** (Raft or Paxos), so a minority of slow nodes never blocks writes.
 
 A strong answer:
 
