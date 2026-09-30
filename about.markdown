@@ -38,6 +38,8 @@ Rust write-ups — the language, crates read from the inside, and the ecosystem 
 
 Mechanistic interpretability write-ups have their own site as well, [MI notes](https://seroze-mi.pages.dev/).
 
+Write-ups on LLM agents — building them, and reading the ones worth reading — are on [Agent notes](https://seroze-agents.pages.dev/).
+
 You can browse everything by [tag](/tags/) or [search the archive](/search/).
 
 For questions, corrections, or anything else, reach out on X — [@{{ site.twitter_username }}](https://x.com/{{ site.twitter_username }}), or by email at [serozekim@gmail.com](mailto:serozekim@gmail.com).

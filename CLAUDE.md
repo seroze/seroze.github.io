@@ -78,6 +78,16 @@ that used to be tagged `mechanistic_interpretability` was moved there, with a
 `_posts/2026-08-19-residual-stream-in-transformer.md` is tagged `interpretability` only and
 stayed behind.
 
+## Agents posts live elsewhere
+
+Notes on LLM agents are published at https://seroze-agents.pages.dev/ (private repo
+`seroze/seroze-agents`, MkDocs Material, hosted on Cloudflare Pages), not here. The posts
+that used to be tagged `agents` were moved there, and each has a `redirects/<slug>.md` stub
+like the others, pointing at `/building/<slug>/`, `/codebases/<slug>/` or
+`/careers/<slug>/`. `script/import_jekyll_post.py <section> <post>...` in that repo does
+the conversion. `_posts/2026-07-30-claude-cowork-job-applications.md` is tagged `ai_agents`
+only and stayed behind.
+
 ## Math / LaTeX
 
 kramdown mangles LaTeX if not configured correctly. The setup that works:
