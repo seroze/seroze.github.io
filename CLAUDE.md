@@ -50,6 +50,15 @@ tagged `system_design` were moved there; `redirects/<slug>.md` keeps each old UR
 with `permalink` + `redirect_to` (jekyll-redirect-from). Those stubs must not get a
 `title`, or minima lists them in the header nav.
 
+## Competitive programming posts live elsewhere
+
+Problem write-ups and technique notes are published at https://seroze-cp.pages.dev/ (private
+repo `seroze-cp/seroze-cp.github.io`, MkDocs Material, hosted on Cloudflare Pages), not here.
+The published posts that used to be tagged `competitive_programming` were moved there, and
+each has a `redirects/<slug>.md` stub like the system design ones, pointing at
+`/problems/<slug>/` or `/techniques/<slug>/`. `script/import_jekyll_post.py` in that repo
+does the kramdown to MkDocs conversion.
+
 ## Math / LaTeX
 
 kramdown mangles LaTeX if not configured correctly. The setup that works:
