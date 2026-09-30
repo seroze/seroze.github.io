@@ -34,6 +34,8 @@ Machine learning and numerical computing in Rust.
 
 Competitive programming write-ups — contest problems and technique notes — live on a separate site, [CP notes](https://seroze-cp.pages.dev/).
 
+Rust write-ups — the language, crates read from the inside, and the ecosystem — are on a separate site too, [Rust notes](https://seroze-rust.pages.dev/).
+
 You can browse everything by [tag](/tags/) or [search the archive](/search/).
 
 For questions, corrections, or anything else, reach out on X — [@{{ site.twitter_username }}](https://x.com/{{ site.twitter_username }}), or by email at [serozekim@gmail.com](mailto:serozekim@gmail.com).

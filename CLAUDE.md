@@ -59,6 +59,15 @@ each has a `redirects/<slug>.md` stub like the system design ones, pointing at
 `/problems/<slug>/` or `/techniques/<slug>/`. `script/import_jekyll_post.py` in that repo
 does the kramdown to MkDocs conversion.
 
+## Rust posts live elsewhere
+
+Rust notes are published at https://seroze-rust.pages.dev/ (private repo
+`seroze/seroze-rust`, MkDocs Material, hosted on Cloudflare Pages), not here. The published
+posts that used to be tagged `rust` were moved there, and each has a `redirects/<slug>.md`
+stub like the others, pointing at `/language/<slug>/`, `/crates/<slug>/` or
+`/ecosystem/<slug>/`. `script/import_jekyll_post.py <section> <post>...` in that repo does
+the conversion. The unpublished draft `_posts/2026-07-28-rust-for-cp.md` stayed behind.
+
 ## Math / LaTeX
 
 kramdown mangles LaTeX if not configured correctly. The setup that works:
