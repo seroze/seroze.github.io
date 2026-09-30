@@ -44,8 +44,8 @@ published: true
 
 ## System design posts live elsewhere
 
-High level design write-ups are published at https://seroze-hld.github.io/ (repo
-`seroze-hld/seroze-hld.github.io`, MkDocs Material), not here. The posts that used to be
+High level design write-ups are published at https://seroze-hld.pages.dev/ (private repo
+`seroze-hld/seroze-hld`, MkDocs Material, hosted on Cloudflare Pages), not here. The posts that used to be
 tagged `system_design` were moved there; `redirects/<slug>.md` keeps each old URL alive
 with `permalink` + `redirect_to` (jekyll-redirect-from). Those stubs must not get a
 `title`, or minima lists them in the header nav.
