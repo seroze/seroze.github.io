@@ -32,6 +32,8 @@ Machine learning and numerical computing in Rust.
 - [#390 — replace unmaintained bincode with postcard](https://github.com/smartcorelib/smartcore/pull/390). bincode's final 3.0.0 release is a poison pill whose entire source is `compile_error!("https://xkcd.com/2347/")`, so any project Dependabot bumped to it stopped building. It was a dev-dependency used for serde round-trip assertions, and postcard is a drop-in for that. The SVM tests stayed on `serde_json` — postcard isn't self-describing, so it can't deserialize their `typetag::serde` trait objects.
 - [#423 — remove duplicated RealNumber trait bound](https://github.com/smartcorelib/smartcore/pull/423). `GaussianNB` asked for `TX: Number + RealNumber + RealNumber` in four different places. It asks nothing extra of `TX`, which is why rustc and clippy both stayed quiet about it since the v0.4 generics rewrite.
 
+Competitive programming write-ups — contest problems and technique notes — live on a separate site, [CP notes](https://seroze-cp.pages.dev/).
+
 You can browse everything by [tag](/tags/) or [search the archive](/search/).
 
 For questions, corrections, or anything else, reach out on X — [@{{ site.twitter_username }}](https://x.com/{{ site.twitter_username }}), or by email at [serozekim@gmail.com](mailto:serozekim@gmail.com).
