@@ -48,7 +48,8 @@ High level design write-ups are published at https://seroze-hld.pages.dev/ (priv
 `seroze-hld/seroze-hld`, MkDocs Material, hosted on Cloudflare Pages), not here. The posts that used to be
 tagged `system_design` were moved there; `redirects/<slug>.md` keeps each old URL alive
 with `permalink` + `redirect_to` (jekyll-redirect-from). Low level design posts (tagged
-`low_level_design`) moved there too, under `/low-level-design/<slug>/`. Those stubs must not get a
+`low_level_design`) moved there too, under `/low-level-design/<slug>/`. Posts tagged
+`databases` moved there too, under `/database-case-studies/<slug>/`. Those stubs must not get a
 `title`, or minima lists them in the header nav.
 
 ## Competitive programming posts live elsewhere
