@@ -58,19 +58,18 @@ to it or redirect to it from this blog. Posts tagged `competitive_programming` b
 
 ## Rust posts live elsewhere
 
-Rust notes are published at https://seroze-rust.pages.dev/ (private repo
-`seroze/seroze-rust`, MkDocs Material, hosted on Cloudflare Pages), not here. The published
-posts that used to be tagged `rust` were moved there, and each has a `redirects/<slug>.md`
-stub like the others, pointing at `/language/<slug>/`, `/crates/<slug>/` or
-`/ecosystem/<slug>/`. `script/import_jekyll_post.py <section> <post>...` in that repo does
-the conversion. The unpublished draft `_posts/2026-07-28-rust-for-cp.md` stayed behind.
+Rust notes live in the private repo `seroze/seroze-rust` (MkDocs Material on Cloudflare
+Pages), not here. That site is for personal use only: never link to it or redirect to it from
+this blog. Posts tagged `rust` belong there; `script/import_jekyll_post.py <section> <post>...`
+in that repo does the conversion. The unpublished draft `_posts/2026-07-28-rust-for-cp.md`
+stayed behind.
 
 ## Mechanistic interpretability posts live elsewhere
 
 Mechanistic interpretability notes are published at https://seroze-mi.pages.dev/ (private
 repo `seroze/seroze-mi`, MkDocs Material, hosted on Cloudflare Pages), not here. The post
 that used to be tagged `mechanistic_interpretability` was moved there, with a
-`redirects/<slug>.md` stub like the others, pointing at `/concepts/<slug>/`.
+`redirects/<slug>.md` stub (`permalink` + `redirect_to`, no `title`), pointing at `/concepts/<slug>/`.
 `script/import_jekyll_post.py <section> <post>...` in that repo does the conversion.
 `_posts/2026-08-19-residual-stream-in-transformer.md` is tagged `interpretability` only and
 stayed behind.

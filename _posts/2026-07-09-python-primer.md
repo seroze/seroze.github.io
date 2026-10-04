@@ -2411,4 +2411,4 @@ It doesn't help when:
 - **The time is inside a C library.** Compiling the Python that *calls* zlib or SQLite changes nothing.
 - **You haven't profiled.** Cython on the wrong 5% of the code buys nothing and costs you a build step, wheels for every platform, and a harder debugging story.
 
-Worth knowing the neighbours: `numba` gives you JIT compilation of numeric functions with a decorator and no build system; `mypyc` compiles typed Python ahead of time; and PyO3 lets you write the hot part in Rust with memory safety and good tooling — see [Calling Rust from Python with PyO3](https://seroze-rust.pages.dev/language/rust-python-interop-pyo3/) for a worked example.
+Worth knowing the neighbours: `numba` gives you JIT compilation of numeric functions with a decorator and no build system; `mypyc` compiles typed Python ahead of time; and PyO3 lets you write the hot part in Rust with memory safety and good tooling.

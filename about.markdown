@@ -32,9 +32,7 @@ Machine learning and numerical computing in Rust.
 - [#390 — replace unmaintained bincode with postcard](https://github.com/smartcorelib/smartcore/pull/390). bincode's final 3.0.0 release is a poison pill whose entire source is `compile_error!("https://xkcd.com/2347/")`, so any project Dependabot bumped to it stopped building. It was a dev-dependency used for serde round-trip assertions, and postcard is a drop-in for that. The SVM tests stayed on `serde_json` — postcard isn't self-describing, so it can't deserialize their `typetag::serde` trait objects.
 - [#423 — remove duplicated RealNumber trait bound](https://github.com/smartcorelib/smartcore/pull/423). `GaussianNB` asked for `TX: Number + RealNumber + RealNumber` in four different places. It asks nothing extra of `TX`, which is why rustc and clippy both stayed quiet about it since the v0.4 generics rewrite.
 
-Rust write-ups — the language, crates read from the inside, and the ecosystem — are on a separate site, [Rust notes](https://seroze-rust.pages.dev/).
-
-Mechanistic interpretability write-ups have their own site as well, [MI notes](https://seroze-mi.pages.dev/).
+Mechanistic interpretability write-ups have their own site, [MI notes](https://seroze-mi.pages.dev/).
 
 Write-ups on LLM agents — building them, and reading the ones worth reading — are on [Agent notes](https://seroze-agents.pages.dev/).
 
