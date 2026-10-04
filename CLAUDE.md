@@ -51,12 +51,10 @@ it or redirect to it from this blog. Posts tagged `system_design`, `low_level_de
 
 ## Competitive programming posts live elsewhere
 
-Problem write-ups and technique notes are published at https://seroze-cp.pages.dev/ (private
-repo `seroze-cp/seroze-cp.github.io`, MkDocs Material, hosted on Cloudflare Pages), not here.
-The published posts that used to be tagged `competitive_programming` were moved there, and
-each has a `redirects/<slug>.md` stub (`permalink` + `redirect_to`, no `title`), pointing at
-`/problems/<slug>/` or `/techniques/<slug>/`. `script/import_jekyll_post.py` in that repo
-does the kramdown to MkDocs conversion.
+Problem write-ups and technique notes live in the private repo `seroze-cp/seroze-cp.github.io`
+(MkDocs Material on Cloudflare Pages), not here. That site is for personal use only: never link
+to it or redirect to it from this blog. Posts tagged `competitive_programming` belong there;
+`script/import_jekyll_post.py` in that repo does the kramdown to MkDocs conversion.
 
 ## Rust posts live elsewhere
 
