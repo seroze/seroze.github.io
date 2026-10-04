@@ -44,20 +44,17 @@ published: true
 
 ## System design posts live elsewhere
 
-High level design write-ups are published at https://seroze-hld.pages.dev/ (private repo
-`seroze-hld/seroze-hld`, MkDocs Material, hosted on Cloudflare Pages), not here. The posts that used to be
-tagged `system_design` were moved there; `redirects/<slug>.md` keeps each old URL alive
-with `permalink` + `redirect_to` (jekyll-redirect-from). Low level design posts (tagged
-`low_level_design`) moved there too, under `/low-level-design/<slug>/`. Posts tagged
-`databases` moved there too, under `/database-case-studies/<slug>/`. Those stubs must not get a
-`title`, or minima lists them in the header nav.
+High level design write-ups live in the private repo `seroze-hld/seroze-hld` (MkDocs
+Material on Cloudflare Pages), not here. That site is for personal use only: never link to
+it or redirect to it from this blog. Posts tagged `system_design`, `low_level_design` or
+`databases` belong there.
 
 ## Competitive programming posts live elsewhere
 
 Problem write-ups and technique notes are published at https://seroze-cp.pages.dev/ (private
 repo `seroze-cp/seroze-cp.github.io`, MkDocs Material, hosted on Cloudflare Pages), not here.
 The published posts that used to be tagged `competitive_programming` were moved there, and
-each has a `redirects/<slug>.md` stub like the system design ones, pointing at
+each has a `redirects/<slug>.md` stub (`permalink` + `redirect_to`, no `title`), pointing at
 `/problems/<slug>/` or `/techniques/<slug>/`. `script/import_jekyll_post.py` in that repo
 does the kramdown to MkDocs conversion.
 
