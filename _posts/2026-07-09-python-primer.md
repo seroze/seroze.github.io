@@ -1209,6 +1209,39 @@ t                 # ([1, 2, 99], 3)  ← ...and yet it worked
 
 `__iadd__` mutates the list successfully, then the augmented-assignment protocol tries to store the result back into `t[0]` and the tuple refuses. The exception is real and the mutation is real.
 
+### Python has no value types
+
+C++ and C# split types into value types, which are copied on assignment, and reference types, which are shared. Python has no such split. **Every variable, attribute, list slot and default holds a reference to an object**, including `int`, `float` and `str`:
+
+```python
+a = 5
+b = a
+a is b        # True: two names, one int object
+```
+
+Assignment never copies anything. Neither does passing an argument or storing a default. What Python has instead is **mutable vs immutable objects**, and immutability is what makes some types *behave* like values:
+
+```python
+x = 5
+y = x
+x += 1        # makes a new int 6 and rebinds x; y still points at 5
+
+p = [5]
+q = p
+p += [1]      # mutates the one list in place; q sees [5, 1]
+```
+
+Both blocks use references the same way. The only difference is whether the object can be changed. An immutable object can't be changed, so sharing it is never visible, and it feels like a value. A mutable object can be changed, so everyone holding a reference sees the change.
+
+| | C++ | Python |
+|---|---|---|
+| `T x = y;` | copies the value | binds a second name to the same object |
+| Member default `std::vector<int> v = {};` | runs per object, so each gets its own vector | evaluated once, so every instance shares it |
+| Getting a copy | implicit | explicit: `copy.copy`, `list(x)`, `x[:]`, `default_factory` |
+| Closest thing to a value type | `int`, a `struct` | an immutable object |
+
+This is the root of the [dataclass default rule](#why-str-and-float-defaults-dont-need-a-factory). Sharing an immutable default is harmless, while a mutable one needs a factory to do what C++ does on its own. (Small-int and string caching can make `is` return `True` for equal values. That's an optimisation, not value semantics. See [`is` vs `==`](#is-vs--small-int-caching-and-string-interning).)
+
 ### How arguments are passed
 
 "Python is pass by reference" is the wrong sentence to have ready. The accurate one:
