@@ -2295,6 +2295,109 @@ $$2 + 2 + 2 = 6 \equiv 0 \pmod 3$$
 
 exactly as needed. There's no `if k < 0` afterwards and no `+ 3` fudge factor; the sign rule already landed the answer in `[0, 3)`. C++ gives `-1` for that same expression, which is why C-family code writes `((-i - j) % 3 + 3) % 3` or `(3 - (i + j) % 3) % 3` instead. That trailing `+ m) % m` is the tell that you're reading modular arithmetic written for a language that truncates.
 
+## f-strings and multi-line messages
+
+A common pattern in test helpers:
+
+```python
+raise AssertionError(
+    f"{name} failed\nExpected: {normalize(expected)}\n"
+    f"Actual:   {normalize(actual)}"
+)
+```
+
+This passes one multi-line string to `AssertionError`. Three things are going on:
+
+1. **The `f` prefix** makes each literal an f-string, so `{name}` and `{normalize(expected)}` are evaluated and their results inserted into the text. Any expression works inside the braces, including function calls.
+2. **`\n`** puts a line break in the resulting string.
+3. **Adjacent string literals are joined** at compile time. Two literals with only whitespace between them, here a line break inside the parentheses, become a single string. The parentheses are what let the expression span several lines without a trailing `\`.
+
+So the two f-strings above become one string before `AssertionError` ever sees it:
+
+```
+add failed
+Expected: [1, 2, 3]
+Actual:   [1, 2, 4]
+```
+
+### Adjacent f-strings inside parentheses
+
+```python
+name = "Maya"
+score = 92
+
+message = (
+    f"Student: {name}\n"
+    f"Score: {score}"
+)
+
+print(message)
+# Student: Maya
+# Score: 92
+```
+
+Note that the joining adds nothing between the pieces. Forget the `\n` and you get `Student: MayaScore: 92`. Forget a comma in a list and you get the same silent concatenation: `["a" "b", "c"]` is `["ab", "c"]`.
+
+### Triple-quoted f-strings
+
+Triple quotes keep the line breaks you type:
+
+```python
+account_id = "A17"
+status = "related"
+
+message = f"""Account: {account_id}
+Status: {status}
+Review: complete"""
+
+print(message)
+```
+
+The catch is that **indentation inside the string becomes part of it**. Inside a function you either push the continuation lines to column 0 or strip the indent with `textwrap.dedent`:
+
+```python
+import textwrap
+
+def report(account_id, status):
+    return textwrap.dedent(f"""\
+        Account: {account_id}
+        Status: {status}
+    """)
+```
+
+The `\` right after the opening `"""` stops the string from starting with a blank line.
+
+### Expressions and format specifiers
+
+```python
+expected = [1, 2, 3]
+actual = [1, 2, 4]
+
+message = (
+    f"Expected: {expected}\n"
+    f"Actual:   {actual}\n"
+    f"Match:    {expected == actual}"
+)
+# Expected: [1, 2, 3]
+# Actual:   [1, 2, 4]
+# Match:    False
+```
+
+A format spec goes after a `:` inside the braces:
+
+```python
+balance = 12.3456
+
+message = f"""Balance: ${balance:.2f}
+Rounded: {round(balance)}"""
+# Balance: $12.35
+# Rounded: 12
+```
+
+### Which one to use
+
+Use adjacent strings with `\n` when you want exact control over line breaks and whitespace, as in error messages and log lines. Use triple quotes for longer blocks of text, where reading it as it will print matters more, and watch the indentation.
+
 ## Flat layout vs `src/` layout
 
 Open a few Python repos and you'll notice they don't agree on where the package lives. Some put it right at the root next to `pyproject.toml`; others bury it one level down inside `src/`. Both are normal, both install and import identically once packaged, and the difference only bites you while you're working *inside* the repo.
