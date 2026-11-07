@@ -773,6 +773,78 @@ That's still a valid design when you need to tell "not provided" apart from "emp
 
 On the version detail: up to Python 3.10 the `ValueError` only checked for `list`, `dict` and `set`. Since 3.11 it rejects any default whose class is unhashable. As the note below says, a mutable object of your own class is still let through and shared.
 
+#### Why `str` and `float` defaults don't need a factory
+
+Nothing stops you from using `field()` with a `str` or a `float`. They just don't need `default_factory`, because they're immutable. A shared default only causes trouble if someone can change that shared object in place.
+
+**Sharing an immutable default is harmless:**
+
+```python
+@dataclass
+class Order:
+    symbol: str = "NA"
+    qty: int = 0
+
+o1, o2 = Order(), Order()
+o1.symbol is o2.symbol      # True: both point at the same "NA" object
+
+o1.symbol = "INFY"          # REBINDS o1.symbol to a different object
+o2.symbol                   # 'NA', unaffected
+```
+
+The string `"NA"` itself can't be changed. Every "change" to a `str`, `int`, `float` or `tuple` builds a new object and points that one attribute at it. The shared original is never touched.
+
+**Sharing a mutable default is not harmless:** `o1.tags.append("x")` changes the *same* list in place, with no rebinding, so every instance that shares it sees the change. These are the two kinds of "change", the [mutation vs rebinding](#mutation-vs-rebinding) distinction again:
+
+| Operation | What happens | Shared default a problem? |
+|---|---|---|
+| `obj.x = new_value` | rebinds this instance's attribute | No |
+| `obj.x.append(...)`, `obj.x[k] = v` | mutates the shared object | Yes |
+
+Immutable types only allow the first kind, so they're always safe to share.
+
+**What dataclasses actually check.** Dataclasses don't look for `list`, `dict` and `set` by name. Python has no general way to tell whether an object is mutable, so they use hashability as a stand-in:
+
+```python
+# roughly what dataclasses does for each default (3.11+)
+if type(default).__hash__ is None:      # unhashable → assume mutable → reject
+    raise ValueError("mutable default ... use default_factory")
+```
+
+The built-in mutable containers set `__hash__ = None`, so they get caught. Immutable types are hashable, so they pass. It's a heuristic, and it has two gaps:
+
+```python
+@dataclass
+class A:
+    t: tuple = ([],)        # allowed: tuple is hashable as a type, but this one holds a list
+
+a1, a2 = A(), A()
+a1.t[0].append(1)
+a2.t                        # ([1],)  ← the same sharing bug
+
+class Box:                  # plain class: mutable, but hashable by default (by id)
+    def __init__(self):
+        self.items = []
+
+@dataclass
+class B:
+    box: Box = Box()        # allowed, and one Box is shared by every B
+```
+
+So the real rule isn't "lists and dicts". **Use `default_factory` whenever the default can be mutated in place.** That includes your own objects and containers nested inside tuples.
+
+**`field()` is still useful for scalars**, for its other options:
+
+```python
+@dataclass
+class Order:
+    symbol: str
+    price: float = field(default=0.0, compare=False)   # ignored by ==
+    note: str = field(default="", repr=False)          # hidden from print
+```
+
+**Coming from C++?** A Python default is a *reference to one object*, not a value copied into each instance. In C++, `std::vector<int> tags = {};` as a default member initializer runs for every object constructed, so each one gets its own vector. In Python, every instance shares that one reference unless a factory makes a new object each time.
+
 #### Other `field()` options
 
 `default_factory` is the most common reason to call `field()`. The other arguments control how a field shows up in the generated methods:
