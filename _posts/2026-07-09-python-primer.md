@@ -740,6 +740,64 @@ ParkingFloor(0).spots is ParkingFloor(1).spots    # False
 Outside a dataclass, the equivalent is the `None` sentinel from the previous section:
 `def __init__(self, floor, spots=None)`, then `self.spots = {} if spots is None else spots`.
 
+#### Why doesn't Python just copy `[]`, or default to `None`?
+
+It's fair to ask why the dataclass makes you write `field(default_factory=list)` instead of quietly doing the right thing. Both of the obvious automatic fixes are wrong in general.
+
+**Copying the default doesn't work in general.** A list is easy to copy, but a default can be any object: a lock, a socket, a nested structure, an instance of your own class. Should it be a shallow copy or a deep one? Some objects can't be copied at all, and some only make sense if they stay the same object. Python doesn't guess. It makes you say how each instance's value gets created.
+
+**A factory can also do more than a copy.** It's any zero-argument callable, so it runs fresh code for every instance:
+
+```python
+import uuid
+from dataclasses import dataclass, field
+from datetime import datetime
+
+@dataclass
+class Event:
+    id: str = field(default_factory=lambda: uuid.uuid4().hex)    # unique per object
+    created: datetime = field(default_factory=datetime.now)      # time of creation
+    levels: dict = field(default_factory=lambda: {"bid": [], "ask": []})
+```
+
+A copied default would be fixed when the class is defined. Every event would get the same id and the same timestamp, the moment the class body ran.
+
+**Defaulting to `None` changes the type.** It would turn `tags: list[str]` into `list[str] | None` behind your back, and every caller would then need a check:
+
+```python
+if order.tags is not None:
+    order.tags.append("x")
+```
+
+That's still a valid design when you need to tell "not provided" apart from "empty". Write it out yourself: `tags: list[str] | None = None`. The dataclass won't pick for you, because "empty list" and "nothing given" mean different things.
+
+On the version detail: up to Python 3.10 the `ValueError` only checked for `list`, `dict` and `set`. Since 3.11 it rejects any default whose class is unhashable. As the note below says, a mutable object of your own class is still let through and shared.
+
+#### Other `field()` options
+
+`default_factory` is the most common reason to call `field()`. The other arguments control how a field shows up in the generated methods:
+
+```python
+@dataclass
+class Order:
+    symbol: str
+    qty: int
+    _cache: dict = field(default_factory=dict, repr=False, compare=False)
+    notional: float = field(init=False)
+
+    def __post_init__(self):
+        self.notional = self.qty * 100.0
+
+Order("INFY", 2)     # Order(symbol='INFY', qty=2, notional=200.0)  — no _cache
+```
+
+- `repr=False` leaves the field out of the printed form.
+- `compare=False` leaves it out of `==` and ordering. Two orders with different caches still compare equal.
+- `init=False` takes it out of the constructor, so you set it yourself, usually in `__post_init__`. A field with no default normally can't follow one that has a default. An `init=False` field is exempt, since it isn't a parameter at all.
+- `kw_only=True` (3.10+) makes this one field keyword-only. That's also a way to put a required field after defaulted ones.
+
+The rest are conveniences. `default_factory` is the one that prevents a real bug.
+
 <div class="note-red" markdown="1">
 **Never write a mutable default directly — `= {}`, `= []`, `= set()` — as a dataclass field, a
 class attribute, or an argument default.** One object is created at definition time and shared by
@@ -750,6 +808,150 @@ class is *unhashable*, which catches `list`, `dict` and `set` but waves through 
 your own that inherited `object.__hash__` — that one gets shared exactly like the dictionary above,
 with no warning at all.
 </div>
+
+## `dataclass` vs `NamedTuple`
+
+Both generate the `__init__`, `__repr__` and `__eq__` boilerplate from a list of annotated fields, so they look interchangeable:
+
+```python
+from dataclasses import dataclass
+from typing import NamedTuple
+
+@dataclass
+class SpotD:
+    id: str
+    floor: int
+
+class SpotN(NamedTuple):
+    id: str
+    floor: int
+```
+
+They are different kinds of object, though. A `NamedTuple` **is a tuple** with names attached to its positions. A `dataclass` is **an ordinary class** that had its boilerplate written for it. Every difference between them follows from that.
+
+### What being a tuple gives you, and costs you
+
+A `NamedTuple` gets everything a tuple has:
+
+```python
+class Point(NamedTuple):
+    x: int
+    y: int
+
+p = Point(1, 2)
+
+p.x, p[0]          # 1, 1           — by name or by index
+x, y = p           # unpacks
+len(p)             # 2
+p.x = 3            # AttributeError: can't set attribute — immutable
+hash(p)            # works, so it can be a dict key or set member
+p._replace(x=5)    # Point(x=5, y=2) — a new tuple, the original is untouched
+p._asdict()        # {'x': 1, 'y': 2}
+```
+
+It also has the tuple's weaknesses, and those are what matter in a design:
+
+```python
+class Money(NamedTuple):
+    amount: int
+    currency: str
+
+Point(1, 2) == (1, 2)               # True
+Point(10, "USD") == Money(10, "USD")  # True  ← two unrelated types compare equal
+```
+
+Equality is plain tuple equality, so field names and the type are ignored. A `Money` can equal a `Point`, and a `Money` used as a dict key collides with the bare tuple `(10, "USD")`. Code that compares values never notices it was given the wrong type.
+
+The class is also locked down in ways that hurt as soon as you want behaviour:
+
+- **No validation hook.** You can't override `__init__` or `__new__`. Both raise `AttributeError: Cannot overwrite NamedTuple attribute ...` when the class is defined. So you can't reject `Money(-5, "USD")` at construction time.
+- **Subclasses can't add fields.** Adding `z: int = 0` in a subclass of `Point` is silently ignored: `_fields` is still `('x', 'y')`, and `P3(1, 2, 3)` fails with a `TypeError`.
+- **Mutable defaults aren't caught.** `tags: list = []` is accepted and shared by every instance. That's the bug from the [section above](#what-the-guard-rail-is-saving-you-from), and here nothing guards against it.
+
+### What being a class gives you
+
+A dataclass is configured through flags, and each one adds a behaviour you might need:
+
+```python
+from dataclasses import dataclass, field
+
+@dataclass(frozen=True, slots=True)
+class Money:
+    amount: int
+    currency: str
+
+    def __post_init__(self):
+        if self.amount < 0:
+            raise ValueError("amount must be non-negative")
+```
+
+| Want | Spell it |
+|---|---|
+| Mutable entity | `@dataclass` (the default) |
+| Immutable and hashable | `frozen=True` |
+| Validation, or derived fields | `__post_init__` |
+| Per-instance list or dict | `field(default_factory=list)` |
+| `<`, `>`, `sorted()` by field order | `order=True` |
+| Lower memory, no `__dict__` | `slots=True` (3.10+) |
+| Force callers to pass names | `kw_only=True` (3.10+) |
+| Equality by identity, not by fields | `eq=False` |
+
+The generated `__eq__` checks the class first, so `Money(10, "USD") == Point(10, "USD")` is `False`. It isn't iterable or indexable, so nobody can come to depend on field order through unpacking. And inheritance adds fields the way you'd expect.
+
+### Hashing: the part that trips people up
+
+```python
+@dataclass
+class ParkingSpot:
+    id: str
+    occupied: bool = False
+
+{ParkingSpot("A1")}    # TypeError: unhashable type: 'ParkingSpot'
+```
+
+A plain `@dataclass` sets `__hash__ = None`. It defines field-based `__eq__` and its fields can change, so a field-based hash would change under a dict that already holds the object ([the bug described here](#mutable-state-in-__hash__-breaks-dictionaries)). Pick the way out that fits what the object is:
+
+- **It's a value**, defined entirely by its fields: use `frozen=True` and you get a matching `__hash__`.
+- **It's an entity**, with an identity that stays the same while its fields change: use `eq=False`. Equality and hashing then fall back to object identity, so two spots that happen to hold the same data are still two spots: `ParkingSpot("A1") == ParkingSpot("A1")` is `False`. Or keep it unhashable and index it by its id, `spots: dict[str, ParkingSpot]`, which is what most LLD code does anyway.
+
+Both `frozen=True` and `NamedTuple` are shallow. A `list` field can still be appended to, and it makes `hash()` fail ([tuples don't freeze what they contain](#tuples-dont-freeze-what-they-contain)). Use `tuple` or `frozenset` for collection fields on value objects.
+
+### In an LLD, which one?
+
+Most LLD classes fall into one of three groups:
+
+| Kind of class | Examples | Use |
+|---|---|---|
+| **Entity**: has identity, state changes over time | `ParkingSpot`, `Order`, `Account`, `Elevator`, `Booking` | `@dataclass` (often `eq=False`), or a regular class once it has real behaviour |
+| **Value object**: defined by its fields, never changes | `Money`, `Address`, `Coordinate`, `TimeSlot`, events, DTOs | `@dataclass(frozen=True)` |
+| **Lightweight record**: no behaviour, often unpacked | a function returning several values, a composite dict key, rows from a parser | `NamedTuple` |
+
+```python
+from dataclasses import dataclass, field
+from typing import NamedTuple
+
+@dataclass(frozen=True)
+class Money:                        # value object: validated, hashable, type-safe equality
+    amount: int
+    currency: str
+
+@dataclass(eq=False)
+class Ticket:                       # entity: identity matters, state changes
+    id: str
+    spot_id: str
+    fee: Money | None = None        # set on exit
+    events: list[str] = field(default_factory=list)
+
+class Fare(NamedTuple):             # record: returned and unpacked right away
+    base: Money
+    surcharge: Money
+
+base, surcharge = compute_fare(ticket)
+```
+
+**The rule of thumb: default to `@dataclass`, add `frozen=True` for value objects, and pick `NamedTuple` only when you actually want tuple behaviour.** That means unpacking, indexing, or a cheap immutable record you'll create a lot of. In an interview, saying *why*, for example "`Money` is frozen because it's a value object and I want it usable as a dict key", counts for more than the choice itself.
+
+Memory is rarely what decides it. A two-field `NamedTuple` is about 64 bytes. `@dataclass(slots=True)` is smaller, at 48. A plain dataclass with its per-instance `__dict__` is around 330 (CPython 3.14, `sys.getsizeof`). If you're making millions of them, use `slots=True` ([covered here](#__slots__)).
 
 ## Closures capture variables, not values
 
