@@ -136,6 +136,63 @@ The cost scales with **line count, not bytes**: on a 1000×1000 grid all three t
 
 One trap: `.buffer` gives you `bytes`, and indexing bytes yields an **int**, so `row[j] == '#'` is silently always `False` — `.decode()` the rows, or compare against `b'#'[0]`.
 
+## Random 64-bit numbers and multiset hashing
+
+`random.getrandbits(64)` returns a uniform random int in `[0, 2**64)`. Python ints never overflow, so to get C-style wraparound you mask with `MASK = (1 << 64) - 1` after each operation.
+
+Give every distinct value its own random 64-bit weight, and the hash of a multiset is just the **sum of the weights** of its elements, mod `2**64`. Addition doesn't care about order, so two multisets with the same elements get the same hash whatever order they arrive in, and different multisets collide with negligible probability. Removing an element is a subtraction.
+
+[Count Valid Suffix Sorts I](https://leetcode.com/problems/count-valid-suffix-sorts-i/description/) uses this to check "is `nums[i:]` a permutation of `target[i:]`?" in O(1) per index while scanning from the right:
+
+```python
+import random
+
+class Solution:
+    def countSuffix(self, nums: list[int], target: list[int]) -> int:
+        MASK = (1 << 64) - 1
+        rnd = {}
+
+        def h(x):
+            if x not in rnd:
+                rnd[x] = random.getrandbits(64)
+            return rnd[x]
+
+        class MultisetHash:
+            def __init__(self):
+                self.val = 0
+
+            def add(self, x):
+                self.val = (self.val + h(x)) & MASK
+
+            def hash(self):
+                return self.val
+
+        n = len(nums)
+
+        # first index where the prefixes differ
+        p = 0
+        while p < n and nums[p] == target[p]:
+            p += 1
+
+        A, B = MultisetHash(), MultisetHash()
+        ans = 0
+        for i in range(n - 1, -1, -1):
+            if i + 1 < n and target[i] < target[i + 1]:
+                break                      # target[i:] is no longer non-increasing
+
+            A.add(nums[i])
+            B.add(target[i])
+
+            if A.hash() == B.hash() and i <= p:
+                ans += 1                   # same multiset, and the untouched prefix matches
+
+        return ans
+```
+
+**Range hashes for free.** The hash is a sum, so it works with prefix sums. Build `H[i+1] = (H[i] + h(a[i])) & MASK` once, and the multiset hash of any subarray `a[l:r]` is `(H[r] - H[l]) & MASK`. Two ranges hold the same multiset (are permutations of each other) exactly when their range hashes match, so each such query costs O(1) after O(n) preprocessing.
+
+Two notes: use `+`, not `^`. XOR cancels pairs, so `{x, x}` hashes the same as the empty set, which only works when you care about parity. And pick the weights at random at runtime, never from a fixed formula, or a test designed against it can force collisions.
+
 ## Collections
 
 Most Python programs are a thin layer of logic over four containers: `list`, `dict`, `set`
@@ -2601,6 +2658,87 @@ With `i = 2` and `j = 2` that's `-4 % 3`, which Python evaluates to `2`, and
 $$2 + 2 + 2 = 6 \equiv 0 \pmod 3$$
 
 exactly as needed. There's no `if k < 0` afterwards and no `+ 3` fudge factor; the sign rule already landed the answer in `[0, 3)`. C++ gives `-1` for that same expression, which is why C-family code writes `((-i - j) % 3 + 3) % 3` or `(3 - (i + j) % 3) % 3` instead. That trailing `+ m) % m` is the tell that you're reading modular arithmetic written for a language that truncates.
+
+## `datetime` and `date`
+
+The `datetime` module has four types you'll actually use:
+
+- `date`: a calendar day (`2024-03-15`), with no time or timezone.
+- `time`: a time of day, with no date. Rarely needed on its own.
+- `datetime`: a date plus a time, optionally with a timezone.
+- `timedelta`: a duration. It's what you get when you subtract two dates or datetimes, and what you add to shift one.
+
+```python
+from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
+
+due = date(2024, 3, 15)
+due + timedelta(days=-10)              # date(2024, 3, 5)
+due - date(2024, 1, 1)                 # timedelta(days=74)
+(due - date(2024, 1, 1)).days          # 74
+
+now = datetime.now(timezone.utc)       # aware, in UTC
+local = now.astimezone(ZoneInfo("Asia/Kolkata"))
+```
+
+All four are immutable. To change a field, `replace()` returns a new object: `due.replace(day=1)`. It validates the result, so `date(2024, 1, 31).replace(month=2)` raises `ValueError` rather than rolling over into March.
+
+### Naive vs aware
+
+A `datetime` with `tzinfo=None` is **naive**: it's a wall-clock reading with no idea where on Earth it was taken. One with a `tzinfo` is **aware** and pins a real instant. `datetime.now()` gives you naive local time, which is almost never what you want to store.
+
+- Store and compare in UTC, using `datetime.now(timezone.utc)`. Convert to a local zone with `astimezone(ZoneInfo(...))` only when displaying.
+- `datetime.utcnow()` is deprecated since 3.12. It returned a *naive* datetime that only happened to hold UTC, which is how bugs got in.
+- Naive and aware datetimes don't mix: `<` and `-` between them raise `TypeError: can't compare offset-naive and offset-aware datetimes`. `==` doesn't raise, it just returns `False`.
+- `zoneinfo` (3.9+) reads the IANA timezone database. On Windows you may need `pip install tzdata`. Prefer it over `pytz`, whose `localize()` API is easy to get wrong.
+
+### Arithmetic across DST is wall-clock arithmetic
+
+Adding a `timedelta` to an aware datetime moves the *wall clock* and keeps the zone, so across a DST change "one day later" isn't 24 hours:
+
+```python
+ny = ZoneInfo("America/New_York")
+a = datetime(2024, 3, 9, 12, tzinfo=ny)    # day before clocks spring forward
+b = a + timedelta(days=1)                  # 2024-03-10 12:00-04:00
+b - a                                      # 1 day, 0:00:00   (same zone: wall-clock difference)
+b.astimezone(timezone.utc) - a.astimezone(timezone.utc)   # 23:00:00, the real elapsed time
+```
+
+If you need real elapsed time, do the arithmetic in UTC.
+
+### `timedelta` gotchas
+
+A `timedelta` is stored as `days`, `seconds` and `microseconds`, normalized so that only `days` can be negative. So `.seconds` is **not** the total:
+
+```python
+timedelta(days=2, hours=3).seconds         # 10800, the 3 hours; the days are dropped
+timedelta(hours=-1)                        # timedelta(days=-1, seconds=82800)
+timedelta(hours=-1).total_seconds()        # -3600.0  <- this is the one you want
+```
+
+There's no `months` or `years` argument, because months aren't a fixed length. For "same day next month", use `dateutil.relativedelta` or handle the month rollover yourself.
+
+### Parsing and formatting
+
+```python
+datetime.fromisoformat("2024-03-15T10:30:00+05:30")   # the fast path for ISO 8601
+datetime.fromisoformat("2024-03-15T10:30:00Z")        # 'Z' accepted from 3.11
+datetime.strptime("15/03/2024", "%d/%m/%Y")           # parse anything else
+now.isoformat()                                       # '2026-11-08T14:40:11.768512+00:00'
+now.strftime("%Y-%m-%d %H:%M")                        # format for humans
+f"{now:%d %b %Y}"                                     # f-strings take the same codes
+```
+
+`strptime` always returns a naive datetime unless the format includes `%z`. Attach a zone afterwards with `.replace(tzinfo=...)`.
+
+### `datetime` is a subclass of `date`
+
+`isinstance(datetime.now(), date)` is `True`, so an `isinstance(x, date)` check lets datetimes through. Check for `datetime` first if you need to tell them apart. They also don't compare: `datetime(2024, 1, 1) == date(2024, 1, 1)` is `False`, and `<` between them raises `TypeError`. Convert explicitly with `dt.date()`.
+
+### Two more traps
+
+- **Defaults:** `def log(msg, ts=datetime.now())` evaluates `now()` once, when the function is defined (see the default arguments section above). Use `ts=None` and fill it in inside the body, or `field(default_factory=datetime.now)` on a dataclass.
+- **Measuring durations:** don't subtract two `datetime.now()` calls to time code. The wall clock can jump backwards (NTP, manual changes). Use `time.monotonic()` or `time.perf_counter()` for elapsed time, and keep `datetime` for timestamps that people read.
 
 ## f-strings and multi-line messages
 
