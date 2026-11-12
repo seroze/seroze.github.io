@@ -283,6 +283,40 @@ for x in stream:
 Use it for BFS queues, sliding-window minimum (store indices, pop from both ends), and
 "keep the last N" buffers. Anywhere you wrote `lst.pop(0)` in a loop, this is the fix.
 
+#### Level-by-level BFS with `for _ in range(len(q))`
+
+When you need to know *which layer* you're on — minutes elapsed, distance from the source,
+tree depth — process the queue one level at a time. Multi-source BFS (e.g. rotting oranges:
+every rotten orange starts in the queue at minute 0) looks like this:
+
+```python
+from collections import deque
+
+q = deque(rotten_cells)
+minutes = 0
+while q and fresh:
+    for _ in range(len(q)):          # exactly the cells that were here at the start of this minute
+        r, c = q.popleft()
+        for dr, dc in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < rows and 0 <= nc < cols and grid[nr][nc] == 1:
+                grid[nr][nc] = 2
+                fresh -= 1
+                q.append((nr, nc))   # next minute's work — appended *during* the loop
+    minutes += 1
+```
+
+<div class="note-red" markdown="1">
+**`len(q)` is evaluated only once, before the loop starts.** `range(len(q))` becomes a fixed
+`range(3)` (say) the moment the `for` line runs — it is *not* re-checked on every iteration.
+So even though the loop body keeps appending to `q`, it pops exactly the nodes that were in
+the queue at the start of this level. Everything appended during the loop waits for the next
+pass of the `while`. That frozen count is what separates one level from the next.
+</div>
+
+The `_` is just the convention for "I don't need the loop variable." A `while q:` loop
+here instead would drain the newly appended nodes too and blur all the levels together.
+
 ### `set` and `frozenset`
 
 A hash table with no values. Membership, add and discard are `O(1)` average — worst case
