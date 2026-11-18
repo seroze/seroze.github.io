@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "Primer in Python"
+title: "[Python] Primer in Python"
 date: 2026-07-09 00:00:00 +0530
 categories: python
 tags: [python, typing, protocols, descriptors, generators, concurrency, data_structures]
