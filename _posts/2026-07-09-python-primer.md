@@ -363,6 +363,10 @@ true in 3.6 as a CPython implementation detail).
 | `d.copy()` | shallow copy |
 | `dict.fromkeys(it, v)` | build from keys — careful, all keys share **one** `v` |
 
+<span style="color:red">Watch out: `d.get(key)` does **not** raise `KeyError` when the key
+is missing. It just returns `None` (or the default you pass). Only `d[key]` raises
+`KeyError` for a missing key.</span>
+
 Python 3.9 added merge operators, which `update` predates:
 
 ```python
