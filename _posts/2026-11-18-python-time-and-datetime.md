@@ -28,6 +28,7 @@ Every output below was produced on Python 3.14, with the machine's zone set to
 - [`datetime.timedelta`](#datetimetimedelta)
 - [`datetime.timezone` and `zoneinfo`](#datetimetimezone-and-zoneinfo)
 - [Format codes](#format-codes)
+- [Swapping clocks](#swapping-clocks)
 - [Gotchas](#gotchas)
 
 ## The `time` module
@@ -321,6 +322,73 @@ which is −5 in winter and −4 in summer.
 
 For ISO 8601 strings, skip format codes and use `isoformat()` / `fromisoformat()`: they
 are faster and harder to get wrong.
+
+## Swapping clocks
+
+Code that asks "what time is it?" is hard to test if it calls `time.time()` directly.
+Take a small reminder service that receives its clock as an argument instead:
+
+```python
+import time
+from typing import Callable
+
+class ReminderService:
+    def __init__(self, clock: Callable[[], float] = time.time):
+        self.clock = clock
+        self.reminders = []
+
+    def schedule(self, reminder_id, user_id, message, due_at):
+        self.reminders.append({"reminder_id": reminder_id, "user_id": user_id,
+                               "message": message, "due_at": due_at})
+
+    def due(self):
+        now = self.clock()
+        return [r for r in self.reminders if r["due_at"] <= now]
+```
+
+This pattern is called **dependency injection**. The service doesn't decide where time
+comes from; whoever creates it passes in a clock. Because the contract only needs
+"something I can call that returns a number," any zero-argument callable works:
+
+```python
+import time
+
+# Real clocks
+ReminderService(time.time)        # wall-clock Unix seconds
+ReminderService(time.monotonic)   # never jumps backwards; good for timeouts, but not tied to real dates
+
+# Fixed clock, for tests where time never moves
+ReminderService(lambda: 0)
+```
+
+For tests where time needs to move forward, write a small fake clock with `__call__`, so
+instances can be called like functions:
+
+```python
+class FakeClock:
+    def __init__(self, start=0):
+        self.now = start
+
+    def __call__(self):
+        return self.now
+
+    def advance(self, seconds):
+        self.now += seconds
+
+
+clock = FakeClock()
+svc = ReminderService(clock)
+svc.schedule("a", "u", "hi", due_at=10)
+
+assert svc.due() == []      # t=0, nothing due yet
+clock.advance(10)
+assert [x["reminder_id"] for x in svc.due()] == ["a"]   # t=10
+```
+
+Your tests run instantly and give the same result every time, with no `time.sleep()`. It's
+the same pattern as injecting a clock interface in C++ or Java, except in Python a callable
+is the whole interface, so no base class is needed. If you want a type hint for it, use
+`clock: Callable[[], float]` from `typing`.
 
 ## Gotchas
 
