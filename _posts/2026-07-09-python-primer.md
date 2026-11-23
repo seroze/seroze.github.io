@@ -2778,6 +2778,30 @@ f"{now:%d %b %Y}"                                     # f-strings take the same 
 - **Defaults:** `def log(msg, ts=datetime.now())` evaluates `now()` once, when the function is defined (see the default arguments section above). Use `ts=None` and fill it in inside the body, or `field(default_factory=datetime.now)` on a dataclass.
 - **Measuring durations:** don't subtract two `datetime.now()` calls to time code. The wall clock can jump backwards (NTP, manual changes). Use `time.monotonic()` or `time.perf_counter()` for elapsed time, and keep `datetime` for timestamps that people read.
 
+## Backslashes and escape sequences
+
+Inside a Python string, the backslash is a special character. It starts an **escape sequence**, where the backslash and the character after it together mean one special character:
+
+- `"\n"` → newline
+- `"\t"` → tab
+- `"\0"` → NUL character
+- `"\""` → a literal `"` character, not the end of the string
+
+That last one is why `"\"` breaks. Python reads `\"` as "put a quote character inside the string", so the string never closes. Everything after it gets swallowed into the string until Python runs out of line and reports a syntax error.
+
+To get one real backslash, you escape the backslash itself: `"\\"`. The first `\` says "the next character is special", and the second `\` is that character. The result is a string of length 1:
+
+```python
+>>> len("\\")
+1
+>>> print("\\")
+\
+```
+
+The same rule is why `"\0"` works. `\0` is an escape sequence, so the string holds the single NUL character, not a backslash followed by a zero.
+
+You can also use a raw string, where backslashes aren't special (`r"C:\path"`). But a raw string can't end with a single backslash either, so `r"\"` doesn't work. `"\\"` is the normal way to write it.
+
 ## f-strings and multi-line messages
 
 A common pattern in test helpers:
