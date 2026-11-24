@@ -28,6 +28,7 @@ Every output below was produced on Python 3.14, with the machine's zone set to
 - [`datetime.timedelta`](#datetimetimedelta)
 - [`datetime.timezone` and `zoneinfo`](#datetimetimezone-and-zoneinfo)
 - [Format codes](#format-codes)
+- [Epoch seconds to local days](#epoch-seconds-to-local-days)
 - [Swapping clocks](#swapping-clocks)
 - [Gotchas](#gotchas)
 
@@ -322,6 +323,106 @@ which is −5 in winter and −4 in summer.
 
 For ISO 8601 strings, skip format codes and use `isoformat()` / `fromisoformat()`: they
 are faster and harder to get wrong.
+
+## Epoch seconds to local days
+
+Say a store records each order's `placed_at` as Unix epoch seconds, and you want sales per
+**store-local** day. You can do this with plain integers: no `datetime` objects, just an
+offset and floor division. A small helper turns "days since 1970-01-01" back into a date:
+
+```python
+# reports/dates.py
+from datetime import date, timedelta
+
+EPOCH = date(1970, 1, 1)
+SECONDS_PER_DAY = 86400
+
+
+def format_day(day):
+    """Days since 1970-01-01 as "YYYY-MM-DD"."""
+    return (EPOCH + timedelta(days=day)).isoformat()
+```
+
+The conversion takes two steps:
+
+1. **Shift to local time.** An epoch timestamp counts seconds since midnight 1 January
+   1970 **UTC**. Adding the store's offset (`utc_offset_minutes * 60` seconds) turns it into
+   seconds since midnight 1 January 1970 on the **store's** wall clock.
+2. **Count whole days.** `// SECONDS_PER_DAY` throws away the time of day and leaves the
+   number of whole local days since the epoch: day 0 is 1970-01-01, day 1 is 1970-01-02,
+   and so on. `format_day` maps that number back to a date.
+
+```python
+from reports.dates import SECONDS_PER_DAY, format_day
+
+
+def get_day(epoch_time: int, utc_offset_minutes: int) -> int:
+    local_seconds = epoch_time + utc_offset_minutes * 60
+    return local_seconds // SECONDS_PER_DAY
+
+
+def daily_sales(orders, utc_offset_minutes):
+    """[(date, total_cents), ...] per store-local day, oldest first. Days without orders are left out."""
+    totals = {}
+    for order in orders:
+        day = get_day(order["placed_at"], utc_offset_minutes)
+        totals[day] = totals.get(day, 0) + order["total_cents"]
+    return [(format_day(day), total) for day, total in sorted(totals.items())]
+
+
+def orders_on(orders, date, utc_offset_minutes):
+    """The orders placed on a store-local date ("YYYY-MM-DD"), in the order given."""
+    return [order for order in orders
+            if format_day(get_day(order["placed_at"], utc_offset_minutes)) == date]
+```
+
+Because the keys are integers, `sorted(totals.items())` puts the days in date order with no
+date parsing.
+
+### Why the offset matters
+
+Without the offset, `order["placed_at"] // SECONDS_PER_DAY` splits days at **UTC**
+midnight, not at the store's midnight. Take an order at 20:00 UTC on 23 November 2026, at a
+store in Kolkata (UTC+5:30, so `utc_offset_minutes = 330`):
+
+```python
+>>> t = 1795464000                       # 2026-11-23 20:00 UTC
+>>> format_day(t // SECONDS_PER_DAY)     # UTC day
+'2026-11-23'
+>>> format_day(get_day(t, 330))          # Kolkata day: it's 01:30 on the 24th there
+'2026-11-24'
+```
+
+A negative offset moves the boundary the other way. 02:00 UTC on 24 November is still 21:00
+on the 23rd in New York (UTC−5, `utc_offset_minutes = -300`):
+
+```python
+>>> t = 1795485600                       # 2026-11-24 02:00 UTC
+>>> format_day(get_day(t, -300))
+'2026-11-23'
+```
+
+### `//`, not `int(x / y)`
+
+`//` rounds **down**, toward negative infinity, so one second before the epoch lands on
+the day before it. `int(x / y)` rounds toward zero instead and puts it on the wrong day:
+
+```python
+>>> format_day(-1 // SECONDS_PER_DAY)
+'1969-12-31'
+>>> format_day(int(-1 / SECONDS_PER_DAY))
+'1970-01-01'
+```
+
+This applies to any local timestamp that comes out negative after the offset is added. Integer
+`//` also stays exact, while `/` goes through a float.
+
+### Fixed offsets only
+
+This works because the store's offset never changes. A zone with daylight saving time
+changes its offset during the year, so one `utc_offset_minutes` would be wrong for part of
+it. For those zones, convert each timestamp with
+`datetime.fromtimestamp(t, ZoneInfo("America/New_York")).date()` instead.
 
 ## Swapping clocks
 
